@@ -10,6 +10,7 @@ ls -l             # 长格式显示详细信息（权限、大小、时间等）
 ls -lh            # 人性化显示文件大小（KB、MB等）
 ls -lt            # 按修改时间排序（最新在前）
 ls /path/dir      # 列出指定目录内容
+ls -r             # 递归地列出
 ```
 
 ### rm - 删除文件/目录
@@ -52,6 +53,7 @@ cat -n file.txt       # 显示内容并带行号
 
 ### grep - 文本搜索
 ```bash
+一般grep "abc" -nwr即可满足日常使用 
 grep "pattern" file.txt  # 在文件中搜索模式
 grep -i "pattern" file.txt  # 忽略大小写
 grep -n "pattern" file.txt  # 显示匹配行号
@@ -94,19 +96,15 @@ find ./ -name "*.tmp" -delete  # 删除找到的文件
 
 ## 压缩与归档
 
-### gzip - 压缩/解压文件
-```bash
-gzip file.txt         # 压缩文件（生成file.txt.gz）
-gzip -d file.txt.gz   # 解压文件
-gunzip file.txt.gz    # 解压（gzip -d的别名）
-gzip -c file.txt > file.txt.gz  # 压缩并保留原文件
-```
-
 ### tar - 打包/解包（常与压缩结合）
 ```bash
+-c代表归档，加上z、j代表压缩（不同方式）
+-x代表解包，即解压
+-f代表file，要放在最后
+-v可以省略，区别在于是否输出详细信息，不影响功能
 tar -cvf archive.tar dir/  # 打包目录（不压缩）
 tar -zcvf archive.tar.gz dir/  # 打包并gzip压缩
-tar -jcvf archive.tar.bz2 dir/ # 打包并bzip2压缩
+tar -jcvf archive.tar.bz2 dir/ # 打包并bzip2压缩（压缩了更高）
 tar -xvf archive.tar       # 解包
 tar -zxvf archive.tar.gz   # 解压tar.gz文件
 tar -xvf archive.tar -C /path  # 解压到指定目录
