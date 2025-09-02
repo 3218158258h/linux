@@ -1,5 +1,8 @@
-# Linux 常用命令速查表
-
+##别名
+- 临时生效：`alias 别名='原命令'`（如 `alias ll='ls -l'`）
+- 查看别名：直接输入 `alias`
+- 删除别名：`unalias 别名`
+- 永久生效：将别名写入 `~/.bashrc`（bash）或 `~/.zshrc`（zsh），再执行 `source 文件名` 生效
 ## 文件/目录操作
 
 ### ls - 列出目录内容
@@ -61,9 +64,7 @@ grep -r "pattern" dir/    # 递归搜索目录
 grep -v "pattern" file.txt  # 显示不匹配的行
 grep -w "word" file.txt   # 精确匹配单词
 ```
-
 ## 权限管理
-
 ### chmod - 修改权限
 ```bash
 chmod u+x file.sh     # 给所有者添加执行权限
@@ -73,7 +74,6 @@ chmod 755 file.sh     # 所有者: rwx，组和其他人: r-x
 chmod 644 file.txt    # 所有者: rw-，组和其他人: r--
 chmod -R 755 dir/     # 递归修改目录权限
 ```
-
 ### chown - 修改所有者/所属组
 ```bash
 chown user file.txt   # 修改文件所有者
@@ -81,9 +81,7 @@ chown user:group file.txt  # 修改所有者和所属组
 chown :group file.txt  # 仅修改所属组
 chown -R user:group dir/  # 递归修改目录
 ```
-
 ## 搜索与查找
-
 ### find - 查找文件/目录
 ```bash
 find /path -name "file.txt"  # 按名称查找
@@ -93,9 +91,7 @@ find ./ -type f -size +100M  # 查找大于100MB的文件
 find ./ -mtime -7            # 查找7天内修改的文件
 find ./ -name "*.tmp" -delete  # 删除找到的文件
 ```
-
 ## 压缩与归档
-
 ### tar - 打包/解包（常与压缩结合）
 ```bash
 -c代表归档，加上z、j代表压缩（不同方式）
