@@ -1,3 +1,45 @@
+### mount 命令
+用于挂载文件系统（如硬盘、U盘、网络存储等）到Linux目录。
+
+##### 1. 基础用法
+- 挂载设备到目录：`sudo mount <设备路径> <挂载点>`  
+  示例：`sudo mount /dev/sdb1 /mnt/usb`（挂载U盘到/mnt/usb）
+
+- 查看已挂载的文件系统：`mount`（不加参数）
+
+#### 2. 常用选项
+- 挂载ISO镜像：`sudo mount -o loop <镜像文件> <挂载点>`  
+- 卸载（对应操作）：`sudo umount <挂载点>`（注意是umount，无n）
+
+#### 注意
+- 挂载点目录需先存在（如`mkdir /mnt/usb`）
+- 通常需要sudo权限
+
+### man 命令
+#### 1. 基础查询（最常用）
+- 查命令手册：`man <命令名>`  
+  示例：`man ls`（查 ls 用法）、`man apt`（查 apt 用法）
+#### 2. 手册内关键操作
+- 搜索关键词：输入 `/关键词` 回车（`n` 下一个，`N` 上一个）  
+- 退出手册：按 `q` 键
+
+### apt 核心常用命令
+
+#### 1. 软件源与更新
+- 更新软件包列表：`sudo apt update`  
+- 升级所有软件：`sudo apt upgrade`  
+
+
+#### 2. 软件包管理
+- 安装软件：`sudo apt install <包名>`  
+- 卸载软件（保留配置）：`sudo apt remove <包名>`  
+- 彻底卸载（含配置）：`sudo apt purge <包名>`  
+- 搜索软件：`apt search <关键词>`  
+
+#### 3. 系统清理
+- 清理缓存安装包：`sudo apt clean`  
+- 自动移除无用依赖：`sudo apt autoremove`
+
 ##别名
 - 临时生效：`alias 别名='原命令'`（如 `alias ll='ls -l'`）
 - 查看别名：直接输入 `alias`
