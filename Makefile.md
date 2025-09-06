@@ -108,3 +108,123 @@ main.o: main.c
 ```
 ### 2. `$^`：指代当前规则的“所有依赖文件”
  94 - **含义**：自动替换为当前规则中“所有依赖项”
+
+### 一、字符串处理函数
+#### 1. `$(subst 旧字符串,新字符串,源字符串)`
+- **功能**：替换字符串中的指定内容
+- **示例**：
+  ```makefile
+  str = "hello world"
+  new_str = $(subst world,makefile,$(str))  # 结果："hello makefile"
+  ```
+
+
+#### 2. `$(patsubst 模式,替换模式,源字符串)`
+- **功能**：按模式匹配替换（支持通配符 `%`）
+- **示例**：
+  ```makefile
+  files = a.c b.c c.c
+  objs = $(patsubst %.c,%.o,$(files))  # 结果：a.o b.o c.o
+  ```
+
+
+#### 3. `$(strip 字符串)`
+- **功能**：去除字符串前后的空格和空行
+- **示例**：
+  ```makefile
+  str = "  hello  "
+  new_str = $(strip $(str))  # 结果："hello"
+  ```
+
+
+### 二、文件名处理函数
+#### 1. `$(wildcard 模式)`
+- **功能**：匹配当前目录中符合模式的文件（返回文件名列表）
+- **示例**：
+  ```makefile
+  src_files = $(wildcard *.c)  # 匹配所有 .c 文件，如：main.c tool.c
+  ```
+
+
+#### 2. `$(notdir 路径列表)`
+- **功能**：从路径中提取文件名（去掉目录部分）
+- **示例**：
+  ```makefile
+  paths = src/main.c src/tool.c
+  files = $(notdir $(paths))  # 结果：main.c tool.c
+  ```
+
+
+#### 3. `$(dir 路径列表)`
+- **功能**：从路径中提取目录部分
+- **示例**：
+  ```makefile
+  paths = src/main.c src/tool.c
+  dirs = $(dir $(paths))  # 结果：src/ src/
+  ```
+
+
+#### 4. `$(addprefix 前缀,文件名列表)`
+- **功能**：给文件名列表添加前缀
+- **示例**：
+  ```makefile
+  files = a.o b.o
+  obj_files = $(addprefix obj/,$(files))  # 结果：obj/a.o obj/b.o
+  ```
+
+
+#### 5. `$(addsuffix 后缀,文件名列表)`
+- **功能**：给文件名列表添加后缀
+- **示例**：
+  ```makefile
+  names = main tool
+  src_files = $(addsuffix .c,$(names))  # 结果：main.c tool.c
+  ```
+
+
+### 三、其他实用函数
+#### 1. `$(foreach 变量,列表,表达式)`
+- **功能**：遍历列表，对每个元素执行表达式
+- **示例**：
+  ```makefile
+  files = a b c
+  obj_files = $(foreach f,$(files),$(f).o)  # 结果：a.o b.o c.o
+  ```
+
+
+#### 2. `$(if 条件,为真时的值,为假时的值)`
+- **功能**：条件判断（条件非空则为真）
+- **示例**：
+  ```makefile
+  debug = 1
+  cflags = $(if $(debug),-g -O0,-O2)  # 若 debug 非空，结果：-g -O0；否则：-O2
+  ```
+
+
+#### 3. `$(shell 命令)`
+- **功能**：执行 Shell 命令并返回结果
+- **示例**：
+  ```makefile
+  date = $(shell date +%Y-%m-%d)  # 获取当前日期，如：2023-10-01
+  ```
+
+
+### 四、实战示例：自动生成依赖
+结合上述函数，可实现自动查找源文件、生成目标文件列表：
+```makefile
+# 自动查找所有 .c 文件
+SRC_FILES = $(wildcard *.c src/*.c)
+
+# 将 .c 文件转换为 obj 目录下的 .o 文件
+OBJ_FILES = $(addprefix obj/,$(patsubst %.c,%.o,$(notdir $(SRC_FILES))))
+
+# 创建 obj 目录（如果不存在）
+$(shell mkdir -p obj)
+
+# 编译规则
+obj/%.o: %.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+obj/%.o: src/%.c
+	$(CC) $(CFLAGS) -c $< -o $@
+```
