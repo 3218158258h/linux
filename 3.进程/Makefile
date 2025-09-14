@@ -1,6 +1,6 @@
 .PHONY:gcc clean x
-file1 =shm_read
-file2 =shm_write
+file1 =mq_send
+file2 =mq_receive
 gcc:
 	gcc -o $(file1) $(file1).c;
 	gcc -o $(file2) $(file2).c

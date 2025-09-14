@@ -26,12 +26,23 @@ int main() {
         perror("mmap");
         exit(1);
     }
-    ssize_t count;
+    ssize_t count=0;
+    ssize_t b_read=0;
     do{
-        count = read(0,share,1000);
+        count = read(0,share+b_read,2048-b_read);
+        if(count == -1){
+            perror("read");
+            exit(1);
+        }
+        else{
+            b_read+=count;
+        }
     }
     while(count >0);
-    sleep(1);
+    if (b_read < 2048) {
+        share[b_read] = '\0';
+    }
+    sleep(5);
     close(fd);
     munmap(share,2048);
     return 0;
