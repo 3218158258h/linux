@@ -3,8 +3,8 @@ file1 = serve
 file2 = client
 
 gcc:
-	gcc -o $(file1) $(file1).c
-	gcc -o $(file2) $(file2).c
+	gcc -o $(file1) $(file1).c -lpthread
+	gcc -o $(file2) $(file2).c -lpthread
 	
 clean:
 	rm $(file1) $(file2)

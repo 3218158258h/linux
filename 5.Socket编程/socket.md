@@ -158,7 +158,7 @@ int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen);
 ### 参数说明
 - `sockfd`：处于监听状态的套接字描述符（通过 `listen` 初始化）
 - `addr`：输出参数，用于存储客户端的地址信息（如 IP 和端口），需传入对应协议族的结构体指针（如 `struct sockaddr_in*`），可设为 `NULL` 表示不获取客户端地址
-- `addrlen`：输入输出参数：
+- `addrlen`：输入输出参数：- 必须是定义了的指针，socklen_t client_addr_len = sizeof(struct sockaddr_in);
   - 输入时：指定 `addr` 缓冲区的大小（字节数）
   - 输出时：返回实际存储的客户端地址长度
 
@@ -195,6 +195,7 @@ ssize_t send(int sockfd, const void *buf, size_t len, int flags);
 - `sockfd`：已连接的套接字描述符（TCP 为 `accept` 返回的通信套接字，UDP 为 `connect` 后的套接字）
 - `buf`：指向待发送数据的缓冲区指针
 - `len`：要发送的数据长度（字节数），建议不超过套接字发送缓冲区大小（可通过 `SO_SNDBUF` 选项查询）
+  - 一般用`strlen`而不是`sizeof`，前者是有效字符的大小即要发送的数据长度，后者是整个缓存区的大小
 - `flags`：发送标志，通常设为 `0`，常用选项：
   - `MSG_OOB`：发送带外数据（TCP 紧急数据，用于优先级传输）
   - `MSG_DONTWAIT`：非阻塞发送（覆盖套接字本身的阻塞模式）
