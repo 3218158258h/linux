@@ -1,6 +1,6 @@
 .PHONY:gcc clean  x1 x2
-file1 = serve
-file2 = client
+file1 = serve_process
+file2 = client_process
 
 gcc:
 	gcc -o $(file1) $(file1).c -lpthread

@@ -622,6 +622,7 @@ if (input != EOF) {
 #include <stdio.h>
 char *fgets(char *str, int size, FILE *stream);
 ```
+- 会自动在末尾补`\0`
 1. `str`：指向存储读取数据的字符数组指针
 2. `size`：最多读取的字符数（包含终止符`'\0'`）
 3. `stream`：文件流指针（`FILE*`类型，通过`fopen`获得或标准流如`stdin`）
