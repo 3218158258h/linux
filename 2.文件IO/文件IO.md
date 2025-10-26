@@ -422,7 +422,107 @@ int main() {
 | 标准 | POSIX系统调用 | C标准库函数 |
 
 `======================================================================`
+`======================================================================`
 
+`ioctl`（Input/Output Control）是 Unix/Linux 系统中用于在设备文件上执行**特殊输入输出操作**的系统调用，它允许应用程序与设备驱动程序进行灵活的交互，实现标准 `read`/`write` 无法覆盖的控制功能（如配置设备参数、获取设备状态等）。
+
+
+### 函数原型
+```c
+#include <sys/ioctl.h>
+
+int ioctl(int fd, unsigned long request, ...);
+```
+
+- **参数说明**：
+  - `fd`：设备文件的文件描述符（通过 `open` 获得）。
+  - `request`：操作命令（一个整数，由驱动程序定义，用于指定要执行的具体操作）。
+  - `...`：可选的第三个参数（通常是指针，用于传递数据或接收结果）。
+- **返回值**：成功返回 `0`；失败返回 `-1`，并设置 `errno` 表示错误原因。
+
+
+### 核心作用
+`ioctl` 是应用程序与设备驱动之间的“控制接口”，主要用于：
+1. **查询设备信息**（如 Framebuffer 的屏幕分辨率、硬盘的容量）。
+2. **配置设备参数**（如设置串口波特率、网络接口的 MTU）。
+3. **触发设备特定操作**（如刷新显示器、控制摄像头拍摄）。
+
+它弥补了 `read`/`write` 只能传输数据流的局限性，允许双向传递结构化的控制信息。
+
+
+### 关键概念：`request` 命令
+`request` 是 `ioctl` 的核心参数，由 32 位整数表示，通常按以下规则构造（通过内核宏定义）：
+```c
+// 内核中定义的宏，用于生成标准化的 request
+#define _IOC(dir, type, nr, size)  // dir：方向；type：设备类型；nr：序号；size：数据大小
+
+// 常见方向宏：
+// _IOC_NONE：无数据传输
+// _IOC_READ：从设备读取数据（驱动 → 应用）
+// _IOC_WRITE：向设备写入数据（应用 → 驱动）
+```
+
+例如，Framebuffer 中获取屏幕信息的命令 `FBIOGET_VSCREENINFO` 就是通过类似方式定义的：
+```c
+#define FBIOGET_VSCREENINFO _IOR('F', 0, struct fb_var_screeninfo)
+// 含义：'F' 是设备类型（Framebuffer），0 是序号，传递 struct fb_var_screeninfo 类型的数据（读操作）
+```
+
+
+### 典型使用场景
+#### 1. Framebuffer 设备：获取屏幕信息
+```c
+#include <linux/fb.h>
+#include <sys/ioctl.h>
+
+int fb_fd = open("/dev/fb0", O_RDWR);
+struct fb_var_screeninfo var;
+// 发送 FBIOGET_VSCREENINFO 命令，获取屏幕参数到 var 中
+if (ioctl(fb_fd, FBIOGET_VSCREENINFO, &var) == -1) {
+    perror("ioctl failed");
+}
+// 得到分辨率：var.xres（宽）、var.yres（高）
+```
+
+
+#### 2. 串口设备：设置波特率
+```c
+#include <termios.h>
+#include <sys/ioctl.h>
+
+int uart_fd = open("/dev/ttyS0", O_RDWR);
+struct termios tty;
+// 读取当前串口配置
+ioctl(uart_fd, TCGETS, &tty);
+// 修改波特率（B115200 是 115200 波特率的宏）
+cfsetispeed(&tty, B115200);  // 输入波特率
+cfsetospeed(&tty, B115200);  // 输出波特率
+// 写入新配置
+ioctl(uart_fd, TCSETS, &tty);
+```
+
+
+#### 3. 网络接口：获取 IP 地址
+```c
+#include <net/if.h>
+#include <arpa/inet.h>
+#include <sys/ioctl.h>
+
+int sock_fd = socket(AF_INET, SOCK_DGRAM, 0);
+struct ifreq ifr;
+strcpy(ifr.ifr_name, "eth0");  // 网络接口名（如 eth0、wlan0）
+// 获取接口的 IP 地址
+if (ioctl(sock_fd, SIOCGIFADDR, &ifr) == -1) {
+    perror("ioctl failed");
+}
+// 解析 IP 地址（存于 ifr.ifr_addr 中）
+struct sockaddr_in *addr = (struct sockaddr_in *)&ifr.ifr_addr;
+printf("IP: %s\n", inet_ntoa(addr->sin_addr));
+```
+
+
+
+`======================================================================`
 `======================================================================`
 ## 二、常用文件IO标准函数
 #### `fopen`基本用法
