@@ -26,6 +26,10 @@
 enum state{IN, OUT};
 enum state RFID_state;
 
+//出入管道
+int fifoOUT, fifoIN;
+
+
 bool cardOn = false;
 void *waitting(void *arg)
 {
@@ -80,7 +84,7 @@ int init_tty(int fd)
 	if(tcsetattr(fd, TCSANOW, &new_flags) != 0)
 	{
 		perror("设置串口失败");
-		exit(0);
+		exit(1);
 	}
 	
 	return 0;
@@ -99,14 +103,7 @@ char get_bcc(char *buf,int n)
 	return (~bcc);
 }
 
-void usage(int argc, char **argv)
-{
-	if(argc != 2)
-	{
-		fprintf(stderr, "Usage: %s <tty>\n", argv[0]);
-		exit(0);
-	}
-}
+
 
 /*************************************************
 功能: 初始化卡片放置标志位，当检查到卡片后，flag置为false，当卡片移除后1秒，
@@ -138,27 +135,37 @@ void *in_out(void *arg)
 
 int main(int argc, char **argv)
 {
-	usage(argc, argv);  //验证是否传入两位
+	if(argc != 2)
+	{
+		log_error("Usage: %s <tty>\n", argv[0]);
+		exit(0);
+	}
 	
 	// 设置定时器到达指定时间执行的函数
 	signal(SIGALRM, refresh);       //绑定超时函数 
 
 	// 准备好通信管道
-	int fifoIN  = open(RFID2SQLiteIN,  O_RDWR);       //可读可写 成功返回fd ,失败返回-1
-	int fifoOUT = open(RFID2SQLiteOUT, O_RDWR);
-	if(fifoIN==-1 || fifoOUT==-1)
+	if((fifoIN  = open(RFID2SQLiteIN,  O_RDWR))==-1 )
 	{
 		perror("RFID模块打开管道失败");
-		exit(0);
+		goto exit_all;
+	}
+	if((fifoOUT = open(RFID2SQLiteOUT, O_RDWR))==-1 )
+	{
+		perror("RFID模块打开管道失败");
+		goto close_fifoIN;
 	}
 
 	// 初始化串口
-	int fd = open(argv[1]/*/dev/ttySACx*/, O_RDWR | O_NOCTTY);  //该标志用于告知系统/dev/ttymxc2 它不会成为进程的控 制终端
+	//O_NOCTTY标志用于告知系统/dev/ttymxc2 它不会成为进程的控制终端
+	int fd = open(argv[1]/*/dev/ttySACx*/, O_RDWR | O_NOCTTY);  
 	if(fd == -1)
 	{
-		printf("open %s failed: %s\n", argv[1], strerror(errno));
-		exit(0);
+		log_error("open %s failed: %s\n", argv[1], strerror(errno));
+		
+		goto close_fifoOUT;
 	}
+	//串口初始化函数
 	init_tty(fd);
 
 
@@ -167,9 +174,13 @@ int main(int argc, char **argv)
 	state |= O_NONBLOCK;
 	fcntl(fd, F_SETFL, state);//添加非阻塞
 
-	// 向主控程序回到本模块启动成功
+	// 向主控程序回复本模块启动成功
 	sem_t *s = sem_open(SEM_OK, 0666);
-	sem_post(s); // 将信号量SEM_OK的值+1   用于通知其他进程（如主控程序）本模块（RFID 模块）已启动成功  信号量由操作系统内核管理，进程通过名称 (SEM_OK) 引用同一内核对象。即使 s 是 RFID 模块的局部变量，其指向的信号量是全局的
+	sem_post(s);
+	 // 将信号量SEM_OK的值+1  
+	//   用于通知其他进程（如主控程序）本模块（RFID 模块）已启动成功  
+	//   信号量由操作系统内核管理，进程通过名称 (SEM_OK) 引用同一内核对象。
+	//   即使 s 是 RFID 模块的局部变量，其指向的信号量是全局的
 
 	// 延迟一会儿启动
 	sleep(1);
@@ -298,4 +309,13 @@ int main(int argc, char **argv)
 
 	close(fd);
 	exit(0);
+
+	close_fifoOUT:
+	close(fifoOUT);
+
+	close_fifoIN:
+	close(fifoIN);
+
+	exit_all:
+	exit(1);
 }
