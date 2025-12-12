@@ -1,54 +1,66 @@
 #include "include/head.h"
 #include "thirdparty/log.c/log.h"
 
-pid_t p1 = -1, p2 = -1, p3 = -1, p4 = -1;
+pid_t *p1 = -1, *p2 = -1, *p3 = -1, *p4 = -1;
 int count = 0;
 
+void clean_up();
 
 /*************************************************
 功能:创建子进程
 pid_t s:创建的子进程ID 
-char *argv1:子进程名称 如"RFID"
-char *argv2:子进程运行的程序"./RFID"
+char *argv[0]:子进程名称 如"RFID"
+char *argv[1]:子进程运行的程序"./RFID"
+char *argv[2]:设备参数，为空则是NULL
 *************************************************/
-void create_pthreat(pid_t s, char *argv1,char *argv2)
+void create_process(pid_t *p, char *argv[],sem_t *s)
 {
-	s=fork();
-	if(s == -1)
+	
+	*p=fork();
+	if(*p == -1)
 	{
-		log_error("create %s failed\n",&argv1);
-		goto kill;
+		log_error("create %s failed\n",argv[0]);
+		clean_up();
+		exit(EXIT_FAILURE);
 	}
-	if(s == 0)    //返回0时是子进程分支
+	if(*p == 0)    //返回0时是子进程分支
 	{
-		if(execl(&argv2, &argv1, &argv2, NULL))//传入串口设备路径argv[1]
+		if(argv[2] != NULL)
 		{
-			log_error("RFID start failed\n");
+			execl(argv[1], argv[0], argv[2], NULL);//传入串口设备路径argv[1]
+			log_error("%s start failed\n",argv[0]);
 			exit(EXIT_FAILURE);
+		
+		}
+		else{
+			execl(argv[1], argv[0], NULL);
+			log_error("%s start failed\n",argv[0]);
+			exit(EXIT_FAILURE);
+			
 		}
 	}
-	log_log("RFID starting ..\n");
+	log_log("%s starting ..\n",argv[0]);
 	sem_wait(s); // 等待子模块启动成功      
-	log_log("RFID started\n"); 
+	log_log("%s started\n",argv[0]); 
 }
 
 /*************************************************
 功能:将所有打开的子进程都杀死并退出程序
 *************************************************/
 void kill_all_children() {
-    if (p1 > 0) { // 先判断pid是否有效（>0表示子进程已创建）
+    if (*p1 > 0) { // 先判断pid是否有效（>0表示子进程已创建）
         kill(p1, SIGKILL);
         waitpid(p1, NULL, WNOHANG); // 非阻塞回收僵尸进程
     }
-    if (p2 > 0) {
+    if (*p2 > 0) {
         kill(p2, SIGKILL);
         waitpid(p2, NULL, WNOHANG);
     }
-    if (p3 > 0) {
+    if (*p3 > 0) {
         kill(p3, SIGKILL);
         waitpid(p3, NULL, WNOHANG);
     }
-    if (p4 > 0) {
+    if (*p4 > 0) {
         kill(p4, SIGKILL);
         waitpid(p4, NULL, WNOHANG);
     }
@@ -93,12 +105,41 @@ void stop(int sig)
 
 int main(int argc, char **argv)
 {
+	
+
 	if(argc != 3)
 	{
 		log_error("参数错误，请指定串口和摄像头\n");
 		log_log("例如: ./main /dev/ttySAC2 /dev/video7\n");
 		exit(EXIT_FAILURE);
 	}
+
+	int main(int argc, char **argv)
+{
+	
+
+	if(argc != 3)
+	{
+		log_error("参数错误，请指定串口和摄像头\n");
+		log_log("例如: ./main /dev/ttySAC2 /dev/video7\n");
+		exit(EXIT_FAILURE);
+	}
+
+	// 初始化子进程参数数组
+    // RFID子进程参数
+	//传入串口设备路径
+    char *str_RFID[3] = {"RFID", "./RFID", argv[1]}; 
+
+    // SQLite子进程参数
+    char *str_SQLite[3] = {"SQLite", "./SQLite", NULL};
+
+    // Audio子进程参数
+    char *str_Audio[3] = {"Audio", "./Audio", NULL};
+
+    // Video子进程参数
+	//传入摄像头设备路径
+    char *str_Video[3] = {"Video", "./Video", argv[2]};
+
 
 	// 创建各种管道，用于各模块之间的数据交互
 	// 若已存在则忽略错误（EEXIST）
