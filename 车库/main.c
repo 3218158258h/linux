@@ -2,7 +2,35 @@
 #include "thirdparty/log.c/log.h"
 
 pid_t p1 = -1, p2 = -1, p3 = -1, p4 = -1;
+int count = 0;
 
+
+/*************************************************
+功能:创建子进程
+pid_t s:创建的子进程ID 
+char *argv1:子进程名称 如"RFID"
+char *argv2:子进程运行的程序"./RFID"
+*************************************************/
+void create_pthreat(pid_t s, char *argv1,char *argv2)
+{
+	s=fork();
+	if(s == -1)
+	{
+		log_error("create %s failed\n",&argv1);
+		goto kill;
+	}
+	if(s == 0)    //返回0时是子进程分支
+	{
+		if(execl(&argv2, &argv1, &argv2, NULL))//传入串口设备路径argv[1]
+		{
+			log_error("RFID start failed\n");
+			exit(EXIT_FAILURE);
+		}
+	}
+	log_log("RFID starting ..\n");
+	sem_wait(s); // 等待子模块启动成功      
+	log_log("RFID started\n"); 
+}
 
 /*************************************************
 功能:将所有打开的子进程都杀死并退出程序
@@ -41,17 +69,13 @@ void clean_up()
 }
 
 /*************************************************
-功能:如果刷卡、数据库、语音、视频这4个子进程启动失败就调用该函数
+功能:如果刷卡、数据库、语音、视频这4个子进程关闭就调用该函数
 将所有打开的子进程都杀死并退出程序
 *************************************************/
 
 void quit(int sig)
 {
-	log_error("Submodule exited!\n");
-	if(p1 > 0)kill(p1, SIGKILL);   //杀死p1 进程如果被创建进程号不为0
-	if(p2 > 0)kill(p2, SIGKILL);
-	if(p3 > 0)kill(p3, SIGKILL);
-	if(p4 > 0)kill(p4, SIGKILL);
+	kill_all_children();
 	clean_up();
 	exit(EXIT_FAILURE);
 }
@@ -61,11 +85,7 @@ void quit(int sig)
 *************************************************/
 void stop(int sig)
 {
-	log_error("System exit!\n");
-	if(p1 > 0)kill(p1, SIGKILL);
-	if(p2 > 0)kill(p2, SIGKILL);
-	if(p3 > 0)kill(p3, SIGKILL);
-	if(p4 > 0)kill(p4, SIGKILL);
+	kill_all_children
 	clean_up();
     exit(EXIT_SUCCESS);
 }
