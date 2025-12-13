@@ -122,11 +122,11 @@ void *in_out(void *arg)
 	while(1)
 	{
 		RFID_state = IN;
-		fprintf(stderr, "\r当前状态：【入库】\n");
+		log_info("当前状态：【入库】\n");
 		getchar();
 
 		RFID_state = OUT;
-		fprintf(stderr, "\r当前状态：【出库】\n");
+		log_info("当前状态：【出库】\n");
 		getchar();
 	}
 }
@@ -187,7 +187,9 @@ int main(int argc, char **argv)
 
 	// 创建一条专门用来切换读卡器状态的线程
 	pthread_t tid;
-	pthread_create(&tid, NULL, in_out,   NULL);   //   阻塞等待用户输入  每次调用 getchar() 时，程序会暂停执行，直到用户按下回车键。这用于实现手动切换状态（入库/出库）的触发条件
+	// 阻塞等待用户输入  每次调用 getchar() 时，程序会暂停执行，
+	// 直到用户按下回车键。这用于实现手动切换状态（入库/出库）的触发条件
+	pthread_create(&tid, NULL, in_out,   NULL);
 	pthread_create(&tid, NULL, waitting, NULL);
 
 	int id;
@@ -222,7 +224,7 @@ int main(int argc, char **argv)
 			if(rbuf[2] == 0x00)
 			{
 				cardOn = true;
-				printf("get rfid ok!\n");
+				log_info("get rfid ok!\n");
 				usleep(300000);
 				break;
 			}
@@ -264,11 +266,12 @@ int main(int argc, char **argv)
 		}
 		else
 		{
-			printf("get cardid error!\n");
+			log_error("get cardid error!\n");
 			return -1;
 		}
 		
-		printf("cardid:%d\n",cardid);   // # 代表带格式输出 
+		// # 代表带格式输出 
+		log_info("cardid:%d\n",cardid);
 		if(cardid == 0 || cardid == 0xFFFFFFFF)
 		{
 			continue;

@@ -23,6 +23,9 @@
 #include "sqlite3.h"
 #include "head.h"
 
+//蜂鸣器文件节点
+#define beep_way "/dev/beep"
+
 bool first = true;
 
 int fifoIN;
@@ -60,8 +63,8 @@ int callback(void *arg, int len, char **col_val, char **col_name)
         {
             printf("\r%s\t\t", col_name[i]);
         }
-        printf("\n======================");
-        printf("======================\n");
+        log_info("\n======================");
+        log_info("======================\n");
         first = false;
     }
 
@@ -86,7 +89,7 @@ int callback(void *arg, int len, char **col_val, char **col_name)
 *************************************************/
 void beep(int times, float sec)
 {
-     int buz = open("/dev/beep", O_RDWR);
+     int buz = open(beep_way, O_RDWR);
      if(buz <= 0)
      {
          perror("打开蜂鸣器失败");
@@ -120,8 +123,8 @@ void showDB()
 
     first = true;
     sqlite3_exec(db, SQL, callback, NULL/*用户自定义参数*/, &err);
-    printf("======================");
-    printf("======================\n\n");
+    log_info("======================");
+    log_info("======================\n\n");
 }
 
 /*************************************************
@@ -141,14 +144,16 @@ void *carIn(void *arg)
 
         // B. 检测该入库卡号是否合法
         bzero(SQL, 100);
-        snprintf(SQL, 100, "SELECT * FROM info WHERE 卡号='%x';", id); //功能：检查卡号 id 是否已存在于数据库中。 写入  、、查看卡号id是否已存在于名为info的数据库表中
+        //功能：检查卡号 id 是否已存在于数据库中。 写入  、、查看卡号id是否已存在于名为info的数据库表中
+        snprintf(SQL, 100, "SELECT * FROM info WHERE 卡号='%x';", id); 
         int n = 0;
-        sqlite3_exec(db, SQL, callback, &n/*用户自定义参数*/, &err);  //因为 sqlite3 把数据查出来，得通过回调告诉你查出了什么数据
+        //因为 sqlite3 把数据查出来，得通过回调告诉你查出了什么数据
+        sqlite3_exec(db, SQL, callback, &n/*用户自定义参数*/, &err);  
 
         // B1. 数据库里查到了有n个当前传入的卡号，本次操作非法，发出警报，嘀嘀嘀……
         if(n > 0)
         {
-            fprintf(stderr, "\r该卡已入场，请勿重复刷卡\n");
+            log_debug("\r该卡已入场，请勿重复刷卡\n");
             beep(5, 0.05);
             continue;
         }
@@ -262,7 +267,7 @@ int main()
                               SQLITE_OPEN_READWRITE|SQLITE_OPEN_CREATE, NULL);   //打开创建读写   不存在则创建  ，默认
     if(ret != SQLITE_OK)
     {
-        printf("创建数据库文件失败:%s\n", sqlite3_errmsg(db));  //返回错误信息   
+        log_error("创建数据库文件失败:%s\n", sqlite3_errmsg(db));  //返回错误信息   
         exit(0);
     }
 
