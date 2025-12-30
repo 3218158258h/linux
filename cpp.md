@@ -86,7 +86,27 @@ const int MAX_NUM = 100;
    // *p = 30;  // 错误
    // p = &b;   // 错误
    ```
-
+4. **修饰成员函数（常函数）**  
+在成员函数的参数列表后、函数体前加 const
+- 本质是修改this指针
+- 普通成员函数this指针本身不可改，指向的对象可改
+- 常成员函数this指针不可改，`指向的对象不可改`
+**表现**
+- 不能调用非const成员函数
+- 不能修改非静态成员变量（可读不可写）
+  - 用mutable修饰后可写，如mutable int a;
+cpp
+```cpp
+class 类名 {
+public:
+    返回值类型 函数名(参数列表) const { 函数体 }
+};
+```
+5. **修饰对象（常对象）**
+- 常对象只能调用常成员函数，不能调用普通成员函数，因为普通成员函数会可以修改属性
+```cpp
+const Person p;//对象p的属性不可修改，但是mutable修饰的属性可修改（同上）
+```
 
 ### 关键字static
 - 定义在函数内部则作用域在内部，每次调用不会清零
@@ -95,6 +115,8 @@ const int MAX_NUM = 100;
 - 所有对象的同一静态成员变量共享数据，不同静态成员变量不共享数据
 - 类中定义的静态成员变量在编译阶段分配内存;必须类外初始化，私有数据不影响初始化，但是影响读写
 - 所有对象的共享同一静态成员函数
+- 类中的静态成员函数只能直接访问静态成员（包括静态成员变量和静态成员函数），无法直接访问非静态成员（非静态成员变量、非静态成员函数）
+- 静态成员变量不存储在类空间中，不占用对象的空间，非静态成员变量存储在类空间中
 ```cpp
 class Person
 {
@@ -316,8 +338,9 @@ int system(const char* command);
    ```
 
 
-### 运算符new
-`new` 是用于动态分配内存的运算符，主要作用是在**堆（heap）** 上创建对象或数组，并返回指向该内存的指针。它与 C 语言的 `malloc` 类似，但更符合 C++ 的面向对象特性（会自动调用构造函数）。
+### 关键字new
+`new` 是用于动态分配内存的运算符/运算符，主要作用是在**堆（heap）** 上创建对象或数组，并返回指向该内存的指针。它与 C 语言的 `malloc` 类似，但更符合 C++ 的面向对象特性（会自动调用构造函数）。
+- 必须用delete释放内存，不可以用free
 1. **创建单个对象**：
    ```cpp
    int* num = new int;  // 分配一个int类型的内存，返回指针
@@ -387,7 +410,86 @@ int main() {
 }
 ```
 
-### 引用
+### 关键字delete
+在 C++ 中，`delete` 是用于**释放动态分配的内存**的关键字，必须与 `new` 配对使用（`new` 分配内存，`delete` 回收内存），核心作用是避免内存泄漏。
+- 栈对象不能用delete
+**1. 基础用法：释放单个对象（`new` 对应 `delete`）**
+```cpp
+// 1. 动态分配单个Person对象（new调用构造函数）
+Person* p = new Person(30); 
+// 2. 使用对象
+cout << p->age << endl; 
+// 3. 释放内存（delete调用析构函数，回收内存）
+delete p; 
+p = nullptr; // 建议：释放后置空，避免野指针
+```
+
+
+**2. 释放数组（`new[]` 对应 `delete[]`）**
+如果用 `new[]` 分配数组，必须用 `delete[]` 释放（不能用普通 `delete`）：
+```cpp
+// 动态分配Person数组
+Person* arr = new Person[2]{Person(20), Person(30)}; 
+// 使用数组
+cout << arr[0].age << endl; 
+// 释放数组（delete[] 会调用每个元素的析构函数）
+delete[] arr; 
+arr = nullptr;
+```
+⚠️ 错误示例：`delete arr;`（仅释放第一个元素，其余元素内存泄漏，析构函数也不会调用）。
+
+**`delete` 的关键规则**
+#### 1. 不能重复 `delete`，不能 `delete` 空指针？
+- **重复 delete**：`delete p; delete p;` → 未定义行为（程序崩溃/内存错乱）；
+- **delete nullptr**：合法且安全（编译器会直接忽略，无副作用），因此释放前判空是好习惯：
+  ```cpp
+  if (p != nullptr) {
+      delete p;
+      p = nullptr;
+  }
+  ```
+
+#### 2. `delete` 只作用于指针，与引用无关
+引用是对象的“别名”，不涉及动态内存分配，因此**不能对引用用 `delete`**：
+```cpp
+Person x1(30);
+Person& ref = x1;
+// delete ref; // ❌ 编译报错：引用不是指针，不能delete
+```
+
+**析构函数与 `delete`**
+如果类包含动态分配的资源（比如指针成员），必须手动写析构函数，否则 `delete` 会导致内存泄漏：
+```cpp
+class Person {
+public:
+    int* data; // 动态分配的成员
+    // 构造函数：分配内存
+    Person() : data(new int(10)) {} 
+    // 析构函数：释放成员的动态内存
+    ~Person() {
+        delete data; // 必须手动释放，否则delete Person对象时，data指向的内存泄漏
+        data = nullptr;
+    }
+};
+
+// 使用
+Person* p = new Person();
+delete p; // ① 调用~Person()释放data；② 释放p指向的Person内存
+```
+⚠️ 若不写析构函数：`delete p` 只会释放 `Person` 对象本身的内存，但 `data` 指向的堆内存永远无法回收（内存泄漏）。
+
+**常见误区**
+1. **对栈对象 `delete`**：
+   ```cpp
+   Person p(30); // 栈对象，编译器自动管理内存
+   delete &p; // ❌ 崩溃！栈内存不能手动delete
+   ```
+2. **释放引用**：引用不是指针，`delete ref` 编译报错；
+3. **混用 `delete` 和 `delete[]`**：`new[]` 必须用 `delete[]`，否则内存泄漏；
+4. **释放后不置空**：导致野指针，后续误操作可能崩溃。
+
+
+### 引用&
 **引用（Reference）** 是一种特殊的变量类型，它为已存在的变量创建一个“别名”（alias）
 - 格式：
 类型 &引用名 = 原变量;
@@ -437,6 +539,66 @@ cout << a;     // 输出 20
        return 0;
    }
    ```
+
+
+### this指针
+- 核心作用是：指向当前调用成员函数的那个对象
+**隐含存在**
+- 所有非静态成员函数内部都隐式包含`this`指针（静态成员函数没有 this，因为不依赖对象）
+**指针本质**
+this 的类型是:类名* const,比如 Person* const,指向的对象地址不能改
+**作用**
+1. 区分重名的成员变量和参数
+2. 返回当前对象本身（链式调用），函数类型必须是`类名&`
+
+- PS：静态成员函数属于“类本身”，不依赖对象调用，没有隐含的this指针，因此不能用this
+**区分形参和成员变量**
+```cpp
+
+class Person {
+private:
+    string name;
+    int age;
+public:
+    // 构造函数：参数名和成员变量名重名（name/age）
+    Person(string name, int age) {
+        // this->name：当前对象的成员变量 name
+        // name：构造函数的参数 name
+        this->name = name; 
+        this->age = age;  // 同理，区分成员变量和参数
+    }
+};
+```
+**返回当前对象本身（链式调用）**
+```cpp
+class Person {
+private:
+    int age;
+public:
+    // 返回 Person&（对象引用），才能链式调用
+    //如果函数类型是Person，则返回的是一个拷贝的副本，此时链式调用修改的是副本而不是实例对象
+    Person& setAge(int age) {
+        this->age = age;
+        return *this; // 返回当前对象本身（解引用 this 得到对象）
+    }
+    Person& addAge(int num) {
+        this->age += num;
+        return *this;
+    }
+    void showAge() {
+        cout << "年龄：" << age << endl;
+    }
+};
+
+int main() {
+    // 链式调用：连续调用 setAge 和 addAge
+    Person p;
+    p.setAge(20).addAge(5).showAge(); // 输出：年龄：25
+    return 0;
+}
+```
+- 成员函数中调用成员变量，会隐式添加this指针。如果空指针调用成员函数，不会报错，但是如果成员函数用到成员变量，
+- 就会触发this指针，导致报错
 
 
 ### 函数的默认值
@@ -522,10 +684,204 @@ void print(double x, int y) {  // 参数顺序不同，构成重载
    ```
 
 
+### 关键字operator（运算符重载）
+允许我们为`自定义类型`重新定义`运算符`（如 +、==、[]、<<）的行为，
+让运算符能像操作内置类型（int、double）一样操作自定义对象
+例如：让编译器知道两个Person对象进行加法运算，会发生什么
 
-## 类和对象
+**本质** 运算符重载本质是`函数重载`，编译器会将运算符表达式（如 a + b）转换为对应重载函数的调用
+#### 规则
 
-- 三大特性：`封装` `多态` `继承`
+1. 不能创造新运算符：只能重载已有的运算符如 +、-、*、/、==、[]、() 等不能自定义新运算符（如 #、@）
+
+2. 运算符优先级/结合性不变：重载后运算符的优先级、结合性、操作数个数仍和原运算符一致（如 + 仍低于 *，左结合）
+
+3. 不能重载的运算符（5 个）：
+`.`（成员访问运算符）
+`.*`（成员指针访问运算符）
+`::`（作用域解析运算符）
+`sizeof`（大小运算符）
+`?:`（三目条件运算符）
+#### 左右操作数
+对于二元运算符（比如 +、-、*、/），格式都是 左操作数 运算符 右操作数
+```cpp
+a + b;  // a = 左操作数（LHS），b = 右操作数（RHS）
+p1 + p2; // p1 = 左操作数，p2 = 右操作数
+10 + p;  // 10 = 左操作数，p = 右操作数
+```
+- 若左操作数是当前类的对象（比如 Person p1; p1 + 其他）→ 用「成员函数版」重载；
+- 若左操作数不是当前类的对象（比如 int 10 + Person p、cout << Person p）→ 必须「全局函数版」重载
+
+**格式**
+```cpp
+// 成员函数形式（左操作数是当前对象）
+//如p.operator+(p2)
+返回值类型 operator运算符(参数列表) {
+    // 运算符逻辑
+}
+
+// 全局函数形式（需通过参数传入两个操作数，常配合友元）
+返回值类型 operator运算符(操作数1类型 左操作数, 操作数2类型 右操作数) {
+    // 运算符逻辑
+}
+```
+- 成员函数重载运算符优先级高于全局函数重载运算符
+- 如果两个同时存在，编译器会优先匹配成员函数
+
+
+**1.成员函数重载运算符**
+- 一个参数
+```cpp
+class Person {
+private:
+    int x, y;
+public:
+    Person() {};
+    Person(int x, int y) 
+    {
+        this->x = x;
+        this->y = y;
+    }
+    void show() {
+        cout << "(" << x << "," << y << ")" << endl;
+    }
+    // 1. 成员函数形式重载
+    Person operator+(const Person& p) const {
+        // 返回新对象
+        Person temp;
+        temp.x = this->x + p.x;
+        temp.y = this->y + p.y;
+        return temp;
+    }
+    // 友元声明：为了演示全局函数形式
+    friend Person operator+(const Person& p1, const Person& p2);
+};
+int main() {
+    Person p1(1, 2), p2(3, 4);
+    Person p3 = p1 + p2; // 等价于 p1.operator+(p2)（成员函数形式）
+    p3.show(); // 输出 (4, 6)
+    return 0;
+}
+```
+
+**2.全局函数重载运算符**
+- 两个参数
+```cpp
+// 全局函数形式重载 +（需访问私有成员 x/y，因此声明为友元）
+Person operator+(const Person& p1, const Person& p2) {
+    Person temp;
+    temp.x = p1.x + p2.x;
+    temp.y = p1.y + p2.y;
+    return temp;
+}
+int main() {
+    Person p3 = p1 + p2; // 等价于 p1.operator+(p2)（成员函数形式）或 operator+(p1,p2)（全局函数形式）
+    p3.show(); // 输出 (4, 6)
+    return 0;
+}
+```
+
+
+
+
+### 关键字friend（友元）
+- 允许类外部的函数、其他类，或者其他类的成员函数，直接访问当前类的`private`成员和`protected`成员
+
+**1.普通函数作为友元**
+- 友元函数不属于任何类，无`this`指针
+- 访问类成员时，必须通过函数参数传入的对象（或对象指针/引用）
+- 必须用`friend`在类内声明
+```cpp
+class Person {
+private:
+    string name;
+    int age;
+
+    // 声明全局函数 printPerson 为友元
+    friend void printPerson(const Person& p);
+
+public:
+    Person(string n, int a) : name(n), age(a) {}
+};
+
+// 友元函数：在类外部定义，可直接访问 Person 的 private 成员
+void printPerson(const Person& p) {
+    // 直接访问私有成员 name 和 age，无需 getter
+    cout << "姓名：" << p.name << "，年龄：" << p.age << endl;
+}
+
+int main() {
+    Person p("张三", 20);
+    printPerson(p); // 输出：姓名：张三，年龄：20（友元函数直接访问私有成员）
+    return 0;
+}
+```
+**2.类作为友元**
+- 友元关系是单向的：A声明B为友元，不代表B自动声明A为友元
+- 友元关系不可传递：A是B的友元，B是C的友元，不代表A是C的友元
+- 友元关系不可继承：父类的友元，不会自动成为子类的友元
+- 必须用`friend`在类内声明友元类
+```cpp
+class Person {
+private:
+    string name;
+    int age;
+    // 声明 FriendClass 为友元类（FriendClass 的所有成员函数都能访问 Person 的私有成员）
+    friend class FriendClass;
+public:
+    Person(string n, int a) : name(n), age(a) {}
+};
+// 友元类：可访问 Person 的私有成员
+class FriendClass {
+public:
+    void showPerson1(const Person& p) {
+        cout << "showPerson1：" << p.name << "，" << p.age << endl;
+    }
+};
+
+int main() {
+    Person p("李四", 25);
+    FriendClass fc;
+    fc.showPerson1(p); // 输出：showPerson1：李四，25
+    return 0;
+}
+```
+
+**3.其他类的特定成员函数作为友元**
+- 必须先做前向声明：如果友元成员函数所属的类（如 FriendClass）需要用到当前类（如Person）作为参数，必须在定义该类前声明`class Person;`
+- 声明顺序有要求：先定义友元成员函数所属的类（仅声明函数，不定义）,再定义当前类并声明友元，最后定义友元成员函数
+```cpp
+class Person; //0.前向声明：告诉编译器Person是一个类（后续会定义）
+
+//1.先定义友元成员函数所属的类
+class FriendClass {
+public:
+    // 声明成员函数（参数需要Person类型，因此需要前向声明）
+    void showPerson(const Person& p);
+};
+// 定义Person类，声明FriendClass::showPerson为友元
+class Person {
+private:
+    string name;
+    int age;
+    // 声明FriendClass的showPerson成员函数为友元（仅这一个函数有权限）
+    friend void FriendClass::showPerson(const Person& p);
+public:
+    Person(string n, int a) : name(n), age(a) {}
+};
+// 定义友元成员函数：此时 Person 已完整定义，可访问其私有成员
+void FriendClass::showPerson(const Person& p) {
+    cout << "友元成员函数：" << p.name << "，" << p.age << endl;
+}
+int main() {
+    Person p("王五", 30);
+    FriendClass fc;
+    fc.showPerson(p); // 输出：友元成员函数：王五，30
+    return 0;
+}
+```
+
+
 
 ### 封装
 
@@ -558,7 +914,7 @@ class 类名
    - 类内部可访问，派生类也可访问，但类外部不可访问。
    - 主要用于继承场景，平衡封装性和扩展性。
 
-
+- 函数不存储在类中，不占用类的空间
 #### 封装示例代码
 下面是一个体现封装特性的学生类（`Student`）示例：
 
@@ -641,27 +997,14 @@ int main() {
 
 ### 继承
 
-
-
-
-
-
-
-
-
-
-
-
-
 ### 多态
 
 
 
 
-### 构造函数与析构函数
+### 构造函数
 **构造函数**和**析构函数**是类的两个特殊成员函数，分别负责**对象的初始化**和**对象销毁时的资源清理**，二者均由编译器自动调用，`无需手动触发`
 
-#### 构造函数
 构造函数的核心作用是：**在对象创建时，初始化对象的成员变量（如分配内存、设置初始值），确保对象从创建开始就是“可用状态”**。
 
 
@@ -685,12 +1028,10 @@ int main() {
 | 拷贝构造函数       | 参数为“同类对象的引用”，用于对象拷贝  | `Student(const Student& other) { name = other.name; age = other.age; }`  |
 | 委托构造函数       | 复用其他构造函数的逻辑（C++11 特性）  | `Student() : Student("", 0, 0.0) {}`（委托有参构造初始化）               |
 
-
-
-
-
 - 若用户定义了有参构造函数，则C++会提供默认拷贝构造，但不会提供无参构造
+    - 因此如果使用无参的方法构造对象，则会报错，必须先定义默认构造函数
 - 若用户定义了拷贝构造函数，则C++不会提供无参构造和有参构造函数
+    - 因此如果使用无参/有参的方法构造对象，则会报错，必须先定义默认构造函数/有参构造函数
 
 **浅拷贝**
 - 编译器自动生成的默认拷贝构造函数就是浅拷贝。
@@ -727,8 +1068,10 @@ private:
     float score;
 
 public:
-    // 初始化列表：成员变量按“类中声明顺序”初始化，而非列表顺序
-    Student(string n, int a, float s) : name(n), age(a), score(s) {
+    // 初始化列表：成员变量按“类中声明顺序”初始化（上面的），而非列表顺序（下面的）
+    //也就是说依次初始化name、age、score，而不是按照下面的age、name、score
+    //此时如果初始化列表是age(a), name(age),score(s)，则name会是随机数，因为age还没初始化
+    Student(string n, int a, float s) :  age(a), name(n),score(s) {
         // 函数体可后续处理逻辑（如参数合法性检查）
         xxxxxxxxxxxx
     }
@@ -814,7 +1157,7 @@ int main()
 ```
 
 
-#### 二、析构函数（Destructor）
+### 析构函数
 析构函数的核心作用是：**在对象销毁时（如离开作用域、`delete` 动态对象），释放对象占用的资源（如堆内存、文件句柄、网络连接），避免内存泄漏**。
 
 
@@ -868,13 +1211,4 @@ int main() {
     return 0;       // 函数结束，arr 离开作用域，自动调用析构函数（释放内存）
 }
 ```
-
-
-
-#### 四、关键注意事项
-1. **默认构造函数的“消失”**：若显式定义了“有参构造函数”，编译器会**不再生成默认构造函数**，此时若需无参创建对象，需手动定义默认构造函数（如 `Student() = default;`，C++11 特性）。
-2. **拷贝构造的浅拷贝问题**：编译器自动生成的拷贝构造函数是“浅拷贝”（仅复制成员变量值），若成员包含堆内存，会导致“double free”（两个对象析构时重复释放同一块内存），需显式定义“深拷贝”拷贝构造函数。
-3. **析构函数与继承**：若类作为基类且可能被继承，析构函数需定义为**虚析构函数**（`virtual ~Base()`），否则派生类对象销毁时，仅会调用基类析构，导致派生类的资源泄漏。
-
-
 
