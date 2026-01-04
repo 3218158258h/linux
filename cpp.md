@@ -42,9 +42,9 @@ int main() {
 }
 ```
 
-输入示例：  
+示例：  
 `10 20 3.14`  
-输出结果：  
+结果：  
 `结果：10, 20, 3.14`  
 
 
@@ -728,13 +728,53 @@ p1 + p2; // p1 = 左操作数，p2 = 右操作数
 - 成员函数重载运算符优先级高于全局函数重载运算符
 - 如果两个同时存在，编译器会优先匹配成员函数
 
-**类型**
-- 加法运算符重载
-- 左移运算符重载
-- 递增运算符重载
-- 赋值运算符重载
-- 关系运算符重载
-- 函数调用运算符重载
+### 类型
+**加法运算符重载+**
+**左移运算符重载<<**
+`p.operator<<(cout)`等价于`p`<<cout`
+不符合`cout<<p`,因此一般不会使用成员函数重载左移运算符,只能理由全局函数重载左移运算符
+```cpp
+//一般在类中用友元声明friend ostream operator<<(ostream& cout, const Person& p);
+ostream operator<<(ostream& cout, const Person& p)//本质 opperator<<(cout, p)，等价于cout << p
+{
+    cout << "(" << p.x << "," << p.y << ")" ;
+    return cout;//是为了链式调用，即cout << p后还能继续输出<< endl;
+}
+```
+**递增运算符重载++**
+分为前置递增和后置递增，a++ ++a
+```cpp
+//前置递增
+Person& operator++() {//++p等价于p.operator++();
+    age++;
+    return *this;//返回对象本身，减少拷贝
+}
+//后置递增
+//返回的是值不是引用，因为temp是局部对象
+//p++等价于p.operator++(0);
+Person operator++(int) {//int用于重载函数，区分前置后置
+    Person temp = *this;//先记录当前值
+    age++;//再递增
+    return temp;//返回记录的当前值
+}
+```
+**赋值运算符重载=**
+编译器会提供默认的赋值运算符重载函数，但是是浅拷贝，这样在析构函数中释放资源时会重复导致错误，
+为了实现深拷贝，必须自定义赋值运算符重载函数
+```cpp
+Person& operator=(const Person& p) {
+    if (this != &p) { // 自赋值检查
+        if (age != NULL) {//查看是否已分配内存
+            delete age;//释放内存
+            age = NULL;//重置为NULL
+        }
+        age = new int(*p.age);//深拷贝
+    }
+    return *this;//返回当前对象的引用，支持链式赋值
+}
+```
+**关系运算符重载**
+**函数调用运算符重载**
 
 **1.成员函数重载运算符**
 - 一个参数
