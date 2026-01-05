@@ -231,6 +231,212 @@ int main() {
 `结果：10, 20, 3.14`  
 
 
+### 函数模板
+C++ 中的**函数模板**是一种泛型编程工具，允许你编写与类型无关的函数，编译器会根据调用时传入的实参类型，自动生成对应类型的函数实例（模板实例化）。它的核心价值是**代码复用**，避免为不同类型重复编写逻辑相同的函数（比如交换两个整数、两个字符串、两个自定义对象的逻辑完全一致）。
+
+#### 基本语法
+函数模板的定义以 `template` 关键字开头，后跟**模板参数列表**（用尖括号 `<>` 包裹），然后是普通函数的定义。
+
+**语法格式**
+```cpp
+template <typename T1, typename T2>  // 模板参数列表：T是类型参数（typename 可替换为 class）
+返回值类型 函数名(参数列表) {
+    // 函数逻辑（使用T1, T2 作为类型）
+}
+```
+- `template`：声明这是一个模板。
+- `<typename T1, typename T2>`：模板参数列表，`T1` 是**类型形参**（可以理解为“类型占位符”），`typename` 和 `class` 在此处等价（推荐用 `typename` 更语义化）。
+- 函数体内可以像使用普通类型（如 `int`、`string`）一样使用 `T1, T2`。
+
+- 最简单的示例：交换两个值
+```cpp
+#include <iostream>
+using namespace std;
+// 函数模板：交换两个任意类型的值
+template <typename T>
+void swapValue(T& a, T& b) {
+    T temp = a;
+    a = b;
+    b = temp;
+}
+int main() {
+    // 实例化1：T = int
+    int x = 10, y = 20;
+    swapValue(x, y);
+    cout << "int交换后：x=" << x << ", y=" << y << endl;  // 输出：x=20, y=10
+    // 实例化2：T = double
+    double m = 3.14, n = 6.28;
+    swapValue(m, n);
+    cout << "double交换后：m=" << m << ", n=" << n << endl;  // 输出：m=6.28, n=3.14
+    // 实例化3：T = string
+    string s1 = "hello", s2 = "world";
+    swapValue(s1, s2);
+    cout << "string交换后：s1=" << s1 << ", s2=" << s2 << endl;  // 输出：s1=world, s2=hello
+    return 0;
+}
+```
+
+#### 分类
+函数模板的参数分为两类：**类型参数** 和 **非类型参数**。
+
+**1. 类型参数（最常用）**
+用 `typename T` 或 `class T` 声明，表示“任意类型”（内置类型、自定义类型均可）。
+- 可以声明多个类型参数：
+  ```cpp
+  template <typename T1, typename T2>
+  T1 add(T1 a, T2 b) {
+      return a + b;  // 自动类型转换为 T1
+  }
+
+  // 调用
+  int res1 = add(10, 3.14);  // T1=int, T2=double → 返回13
+  double res2 = add(3.14, 10);  // T1=double, T2=int → 返回13.14
+  ```
+
+**非类型参数（数值参数）**
+表示一个**常量值**（必须是编译期可确定的常量），语法是直接写类型（如 `int`、`size_t`），而非 `typename`。
+- 常用场景：处理数组、固定长度的逻辑。
+  ```cpp
+  // 非类型参数 N：数组长度（编译期常量）
+  template <typename T, int N>
+  T sumArray(T (&arr)[N]) {  // 数组引用，避免数组退化为指针
+      T sum = 0;
+      for (int i = 0; i < N; ++i) {
+          sum += arr[i];
+      }
+      return sum;
+  }
+
+  // 调用
+  int arr1[] = {1,2,3,4,5};
+  cout << sumArray(arr1) << endl;  // N=5，输出15
+
+  double arr2[] = {1.1, 2.2, 3.3};
+  cout << sumArray(arr2) << endl;  // N=3，输出6.6
+  ```
+  ⚠️ 注意：非类型参数的类型限制（C++11/17/20 逐步放宽）：
+  - 只能是整数类型（`int`、`long`、`size_t`）、枚举、指针/引用（指向全局变量/函数）、`std::nullptr_t`；
+  - 不能是浮点数（`double`、`float`）、类类型（如 `std::string`）。
+
+#### 函数模板的实例化
+编译器不会直接编译模板本身，而是在**调用时**根据实参类型生成具体的函数（称为“实例化”）。实例化分为两种：
+
+1. 隐式实例化（最常用）
+编译器自动推导模板参数的类型，无需手动指定：
+```cpp
+swapValue(x, y);  // 隐式推导 T=int
+```
+
+2. 显式实例化
+手动指定模板参数类型（解决推导失败、强制特定类型的场景）：
+```cpp
+// 显式指定 T=double
+swapValue<double>(x, y);  // 即使x/y是int，也会先转换为double再交换
+
+// 推导失败的场景（比如参数类型不一致）
+template <typename T>
+T add(T a, T b) { return a + b; }
+
+// add(10, 3.14);  // 报错：无法推导 T（int和double冲突）
+add<int>(10, 3.14);    // 显式指定 T=int，3.14转为int（3），返回13
+add<double>(10, 3.14); // 显式指定 T=double，10转为double，返回13.14
+```
+
+#### 函数模板的重载
+函数模板可以和普通函数重载，也可以和其他模板重载。编译器会按**优先级**选择调用的函数：
+
+**重载规则（优先级从高到低）**
+1. 普通函数（非模板）；
+2. 模板特化（见下文）；
+3. 模板函数（匹配度更高的优先）。
+
+**示例：模板重载**
+```cpp
+#include <iostream>
+using namespace std;
+
+// 1. 普通函数（处理int）
+int add(int a, int b) {
+    cout << "普通函数：";
+    return a + b;
+}
+
+// 2. 模板函数（通用类型）
+template <typename T>
+T add(T a, T b) {
+    cout << "模板函数：";
+    return a + b;
+}
+
+// 3. 模板重载（两个不同类型）
+template <typename T1, typename T2>
+auto add(T1 a, T2 b) {  // C++14 起 auto 自动推导返回值
+    cout << "重载模板：";
+    return a + b;
+}
+
+int main() {
+    cout << add(10, 20) << endl;        // 调用普通函数（优先级更高）→ 输出：普通函数：30
+    cout << add(10.5, 20.5) << endl;    // 调用模板函数 → 输出：模板函数：31
+    cout << add(10, 20.5) << endl;      // 调用重载模板 → 输出：重载模板：30.5
+    return 0;
+}
+```
+
+#### 函数模板的特化
+当模板对某些特定类型需要特殊逻辑时，使用**模板特化**（覆盖模板的通用逻辑）。
+
+#### 语法：显式特化（全特化）
+```cpp
+// 通用模板
+template <typename T>
+bool isEqual(T a, T b) {
+    return a == b;
+}
+
+// 对 T=char* 的特化（处理字符串比较）
+template <>
+bool isEqual<char*>(char* a, char* b) {
+    return strcmp(a, b) == 0;  // 通用模板的 == 会比较指针地址，特化后比较字符串内容
+}
+
+// 调用
+char* s1 = "hello";
+char* s2 = "hello";
+char* s3 = "world";
+cout << isEqual(s1, s2) << endl;  // 特化版本，输出1
+cout << isEqual(s1, s3) << endl;  // 特化版本，输出0
+```
+
+#### 注意事项
+1. **模板的可见性**：模板的定义（实现）必须在调用点可见（不能只声明模板，把实现放在 `.cpp` 文件）。
+   - 原因：模板实例化需要看到完整的模板代码，因此模板通常定义在头文件（`.h`/`.hpp`）中。
+
+2. **类型限制**：模板中的操作必须对实例化的类型有效。
+   ```cpp
+   template <typename T>
+   void print(T a) {
+       cout << a << endl;
+   }
+
+   struct MyStruct {};
+   // print(MyStruct{});  // 报错：cout 不支持 MyStruct 的输出（没有重载<<）
+   ```
+   解决：为自定义类型重载运算符（如 `operator<<`），或为模板特化。
+
+3. **与 constexpr/consteval 结合**：C++11 起，模板函数可以是 `constexpr`（编译期计算），C++20 起支持 `consteval`（强制编译期计算）：
+   ```cpp
+   template <int N>
+   constexpr int factorial() {
+       return N <= 1 ? 1 : N * factorial<N-1>();
+   }
+
+   int main() {
+       constexpr int res = factorial<5>();  // 编译期计算 5! = 120
+       cout << res << endl;
+       return 0;
+   }
+   ```
 
 ### 关键字const
 `const` 用于声明**常量**（即值不能被修改的变量），作用是“只读保护”，让代码更安全、更易维护。
@@ -911,7 +1117,7 @@ p1 + p2; // p1 = 左操作数，p2 = 右操作数
 - 成员函数重载运算符优先级高于全局函数重载运算符
 - 如果两个同时存在，编译器会优先匹配成员函数
 
-### 类型
+#### 类型
 **加法运算符重载+**
 **左移运算符重载<<**
 `p.operator<<(cout)`等价于`p`<<cout`
