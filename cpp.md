@@ -1,5 +1,7 @@
 
 ### 命名空间
+在 C++ 中，**命名空间（Namespace）** 是用于解决命名冲突的核心机制，它允许将全局作用域划分为多个独立的、可命名的作用域，避免不同模块/库中的标识符（变量、函数、类等）重名。
+
 C++ 标准库（比如 `cout`、`cin`、`endl` 这些工具）里的所有内容，都被放在一个名为 `std` 的“命名空间”中。  
 命名空间的作用是**避免名字冲突**——比如，你自己写的代码里可能有一个叫 `cout` 的变量，这就会和标准库的 `cout` 重名，而命名空间可以区分它们。
 
@@ -8,6 +10,187 @@ C++ 标准库（比如 `cout`、`cin`、`endl` 这些工具）里的所有内容
 加上这句话后，你可以直接写 `cout`、`cin`、`endl` 等，不用额外说明它们来自 `std` 命名空间。
 
 - 如果不写 `using namespace std;`，就必须在标准库的工具前加上 `std::` 前缀，明确说明“这个工具来自 `std` 命名空间”。  
+
+#### 核心作用
+1. **避免命名冲突**：例如两个库都定义了 `print()` 函数，可通过命名空间区分；
+2. **模块化管理代码**：将相关的代码（如工具函数、类）归类到同一个命名空间，增强代码可读性和维护性；
+3. **控制作用域**：限制标识符的可见范围，避免全局作用域污染。
+
+
+#### 基本语法
+**定义命名空间**
+使用 `namespace` 关键字定义，语法如下：
+```cpp
+// 普通命名空间
+namespace 命名空间名 {
+    // 变量、函数、类、结构体等
+    int num = 10;
+    void print() {
+        std::cout << "Hello from namespace!" << std::endl;
+    }
+
+    // 命名空间内可嵌套其他命名空间
+    namespace inner {
+        double pi = 3.14159;
+    }
+}
+```
+
+**注意**：
+- 命名空间的定义可以跨文件（即拆分到多个 `.cpp`/`.h` 文件中），编译器会自动合并同名命名空间；
+- 命名空间不影响变量/函数的存储位置（全局命名空间的变量仍在全局区），仅影响作用域。
+
+**访问命名空间中的成员**
+有 3 种方式访问命名空间内的标识符：
+
+- 作用域解析符 `::`（最常用）
+```cpp
+#include <iostream>
+namespace MyNS {
+    int num = 10;
+    void print() { std::cout << num << std::endl; }
+}
+
+int main() {
+    // 直接通过 命名空间名::标识符 访问
+    std::cout << MyNS::num << std::endl; // 输出 10
+    MyNS::print(); // 输出 10
+    return 0;
+}
+```
+
+- `using` 声明（引入单个成员）
+```cpp
+#include <iostream>
+namespace MyNS {
+    int num = 10;
+    void print() { std::cout << num << std::endl; }
+}
+
+// 引入 MyNS 中的 num，后续可直接使用 num
+using MyNS::num;
+int main() {
+    std::cout << num << std::endl; // 等价于 MyNS::num
+    MyNS::print(); // print 未被引入，仍需加命名空间
+    return 0;
+}
+```
+
+- `using namespace`（引入整个命名空间）
+```cpp
+#include <iostream>
+namespace MyNS {
+    int num = 10;
+    void print() { std::cout << num << std::endl; }
+}
+
+// 引入 MyNS 所有成员，后续可直接使用
+using namespace MyNS;
+int main() {
+    std::cout << num << std::endl; // 直接使用 num
+    print(); // 直接使用 print
+    return 0;
+}
+```
+
+**⚠️ 注意**：`using namespace std;` 是最常见的用法（引入标准库命名空间），但在头文件中应避免使用——会导致全局作用域污染，建议仅在 `.cpp` 文件中使用，或直接用 `std::` 限定（如 `std::cout`）。
+
+
+#### 高级特性
+1. 嵌套命名空间
+命名空间可以嵌套，访问时需逐层指定：
+```cpp
+namespace Outer {
+    namespace Inner {
+        int value = 20;
+    }
+}
+int main() {
+    // 逐层访问
+    std::cout << Outer::Inner::value << std::endl; // 输出 20
+    // C++17 简化嵌套命名空间定义
+    namespace Outer::Inner::Deep {
+        int deep_val = 30;
+    }
+    std::cout << Outer::Inner::Deep::deep_val << std::endl; // 输出 30
+    return 0;
+}
+```
+
+2. 匿名命名空间
+无名称的命名空间，作用域仅限于当前编译单元（`.cpp` 文件），等价于给标识符加 `static`（但更通用，支持类、函数等）：
+```cpp
+// 匿名命名空间：仅当前文件可见
+namespace {
+    int local_num = 100; // 其他文件无法访问
+    void local_func() { std::cout << "Local function" << std::endl; }
+}
+int main() {
+    local_func(); // 直接访问，无需命名空间
+    return 0;
+}
+```
+
+3. 命名空间别名
+给长命名空间起短别名，简化代码：
+```cpp
+// 原命名空间名较长
+namespace VeryLongNamespaceName {
+    int data = 5;
+}
+
+// 定义别名
+namespace VLN = VeryLongNamespaceName;
+
+int main() {
+    std::cout << VLN::data << std::endl; // 输出 5
+    return 0;
+}
+```
+
+4. 命名空间的合并
+同名命名空间会被编译器自动合并（即使定义在不同位置/文件）：
+```cpp
+// 第一个定义
+namespace MyNS {
+    int a = 1;
+}
+// 第二个定义（自动合并）
+namespace MyNS {
+    int b = 2;
+}
+```
+
+
+#### 标准库命名空间 `std`
+C++ 标准库的所有标识符（如 `cout`、`string`、`vector` 等）都定义在 `std` 命名空间中：
+```cpp
+#include <iostream> // cout 位于 std 中
+#include <string>   // string 位于 std 中
+
+int main() {
+    // 方式1：显式使用 std::
+    std::string str = "Hello";
+    std::cout << str << std::endl;
+    // 方式2：局部引入（推荐，避免全局污染）
+    using std::cout;
+    using std::string;
+    string str2 = "World";
+    cout << str2 << std::endl;
+    // 方式3：全局引入（简单但不推荐在头文件中用）
+    // using namespace std;
+    return 0;
+}
+```
+
+
+#### 最佳实践
+1. **头文件中禁用 `using namespace`**：避免污染包含该头文件的其他代码的全局作用域；
+2. **优先使用 `std::` 或局部 `using` 声明**：如 `using std::cout;`，而非全局引入 `std`；
+3. **模块化代码**：将相关功能归类到独立命名空间（如 `Math`、`Network`）；
+4. **匿名命名空间替代 `static`**：在编译单元内隐藏标识符时，优先用匿名命名空间（支持更多类型）；
+5. **避免命名空间嵌套过深**：嵌套层数过多会降低代码可读性。
+
 
 
 ### 标准输出
