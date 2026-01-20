@@ -1,0 +1,30 @@
+// generated from rosidl_generator_dds_idl/resource/idl.idl.em
+// with input from unitree_go:msg/HelloWorldData.idl
+// generated code does not contain a copyright notice
+
+#ifndef __unitree_go__msg__hello_world_data__idl__
+#define __unitree_go__msg__hello_world_data__idl__
+
+
+module unitree_go {
+
+module msg {
+
+module dds_ {
+
+
+struct HelloWorldData_ {
+long long user_id_;
+string message_;
+
+};
+
+
+};  // module dds_
+
+};  // module msg
+
+};  // module unitree_go
+
+
+#endif  // __unitree_go__msg__hello_world_data__idl__
