@@ -6,7 +6,7 @@
 #define __unitree_go__msg__hello_world_data__idl__
 
 
-module unitree_go {
+module airs {
 
 module msg {
 
@@ -24,7 +24,7 @@ string message_;
 
 };  // module msg
 
-};  // module unitree_go
+};  // module airs
 
 
-#endif  // __unitree_go__msg__hello_world_data__idl__
+#endif  // __airs__msg__hello_world_data__idl__
