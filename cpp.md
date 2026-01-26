@@ -1,4 +1,3 @@
-
 ### 命名空间
 在 C++ 中，**命名空间（Namespace）** 是用于解决命名冲突的核心机制，它允许将全局作用域划分为多个独立的、可命名的作用域，避免不同模块/库中的标识符（变量、函数、类等）重名。
 
@@ -503,7 +502,7 @@ const Person p;//对象p的属性不可修改，但是mutable修饰的属性可�
 - 定义在类内则作用域为类，必须在类外初始化，每个对象对于同一个staic共享数据，不同static数据不共享
 - 所有对象的同一静态成员变量共享数据，不同静态成员变量不共享数据
 - 类中定义的静态成员变量在编译阶段分配内存;必须类外初始化，私有数据不影响初始化，但是影响读写
-- 所有对象的共享同一静态成员函数
+- 所有对象共享同一静态成员函数
 - 类中的静态成员函数只能直接访问静态成员（包括静态成员变量和静态成员函数），无法直接访问非静态成员（非静态成员变量、非静态成员函数）
 - 静态成员变量不存储在类空间中，不占用对象的空间，非静态成员变量存储在类空间中
 ```cpp
@@ -512,14 +511,15 @@ class Person
 public:
 
     int test;
+
     //编译阶段分配内存
     static int age;
+
     //静态成员函数
     //只能访问静态成员变量
     static void hello()
     {
         cout << age <<endl;
-        cout << "Hello World!" << endl;
     }
     Person():test(2){}
 
@@ -1119,7 +1119,15 @@ p1 + p2; // p1 = 左操作数，p2 = 右操作数
 
 #### 类型
 **加法运算符重载+**
+```cpp
+Person operator+(const Person& p1, const Person& p2) {//const T&可以绑定T&和const T&
+    Person p;                                         //T&只能绑定T&，因此建议const 且更安全
+    p.age = p1.age + p2.age;
+    return p;//返回对象本身，触发拷贝。如果返回引用会错误，因为源对象被销毁
+}
+```
 **左移运算符重载<<**
+
 `p.operator<<(cout)`等价于`p`<<cout`
 不符合`cout<<p`,因此一般不会使用成员函数重载左移运算符,只能理由全局函数重载左移运算符
 ```cpp
@@ -1131,6 +1139,7 @@ ostream operator<<(ostream& cout, const Person& p)//本质 opperator<<(cout, p)�
 }
 ```
 **递增运算符重载++**
+
 分为前置递增和后置递增，a++ ++a
 ```cpp
 //前置递增
@@ -1148,6 +1157,7 @@ Person operator++(int) {//int用于重载函数，区分前置后置
 }
 ```
 **赋值运算符重载=**
+
 编译器会提供默认的赋值运算符重载函数，但是是浅拷贝，这样在析构函数中释放资源时会重复导致错误，
 为了实现深拷贝，必须自定义赋值运算符重载函数
 ```cpp
@@ -1162,8 +1172,46 @@ Person& operator=(const Person& p) {
     return *this;//返回当前对象的引用，支持链式赋值
 }
 ```
-**关系运算符重载**
-**函数调用运算符重载**
+**关系运算符重载==, !=, <, >, <=, >=** 
+```cpp
+bool operator==(const Person& p) const/*表示这个成员函数不会修改调用它的那个对象（即 *this）的状态*/ 
+{
+    if (age != p.age)
+    {
+        return false;
+    }
+    return true;
+}
+```
+
+**函数调用运算符重载()**
+- 函数调用运算符重载允许你将一个对象像函数一样被调用。这使得类的实例可以“表现”为可调用的实体，是实现仿函数或函数对象的关键
+- `operator()`是一个特殊的运算符，它没有参数列表时也必须写成`()`
+- 它可以接受任意数量和类型的参数,可以是 const 修饰的，也可以不是,可以有默认参数
+
+```cpp
+// 在类内部定义
+返回类型 operator()(参数列表) {//调用时关键字会被省略，只剩下(参数列表)
+    // 实现函数体
+}
+class Person {
+    private:
+    int age;
+    public:
+    Person(int age1): age(age1) {};//构造函数
+    int operator()(int x)  {//调用时关键字会被省略，只剩下(参数列表)
+    return age += x;
+    }
+};
+int main() {
+        Person p10(10), p20(20);
+        cout << p10(5);//相当于p10.operator()(5)，此时p10.age=15
+        cout << p20(5);//相当于p20.operator()(5)，此时p20.age=25
+        cout << p10(5);//不是p10()5,a + b：a 是左操作数，b 是右操作数。
+                       //p10(5)：p10 是左操作数，(5) 是右操作数。
+        return 0;
+    }
+```
 
 **1.成员函数重载运算符**
 - 一个参数
@@ -1433,10 +1481,183 @@ int main() {
 
 ### 继承
 
+```cpp
+class 派生类名 : 访问控制符 基类名 {
+    // 派生类的成员（数据成员和成员函数）
+};
+```
+
+**访问控制符**
+- 不指定访问控制符，类的继承默认为 `private`
+- `public`：公有
+- `protected`：保护
+- `private`：私有
+
+| 排名 | 权限类型 | 严格程度 | 说明 |
+|------|----------|----------|------|
+| 1 | 私密 (Private) |最严格 | 只能被定义它的类内部访问。外部代码、派生类、其他类均无法直接访问。是封装性的核心体现。 |
+| 2 | 保护 (Protected) |中等严格 | 可以被类自身成员和其派生类成员访问，但不能被类的对象或外部函数直接访问。主要用于继承中的共享。 |
+| 3 | 公开 (Public) |最宽松 | 可以被任何代码访问，包括类外、派生类、外部函数等。是对外暴露接口的方式。 |
+
+- Private>Protected>Public
+- 因此继承时，访问控制符和基类的权限中取`最严格的权限`，私有无法访问，但是会被继承(占用空间)
+- 例如基类中protected中的东西，被子类中public继承，则子类中继承的权限依旧为protected
+- 基类中public中的东西，被子类中protected继承，则子类中继承的权限变为protected
+- 基类中public中的东西，被子类中private继承，则子类中继承的权限变为private
+
+**对象模型**
+- 父类的非静态成员都会被继承，会占用空间，private也会，只是会被隐藏限制访问
+- 父类的静态成员不会被继承，属于类本身，不会占用空间
+```cpp
+class Base {
+    private:
+    int a;
+    protected:
+    int b;
+    public:
+    int c;
+};
+class Derived : public Base {
+    public:
+    int d;
+};
+//sizeof(Derived) == sizeof(Base) + sizeof(int)  >>   16
+```
+
+**公有继承**
+
+```cpp
+// 基类
+class Animal {
+public:
+    void eat() {
+        cout << "This animal is eating." << endl;
+    }
+    void sleep() {
+        cout << "This animal is sleeping." << endl;
+    }
+};
+// 派生类：狗（Dog 继承自 Animal）
+class Dog : public Animal {
+public:
+    void bark() {
+        cout << "Woof! Woof!" << endl;
+    }
+};
+int main() {
+    Dog myDog;
+    myDog.eat();     // 继承自 Animal
+    myDog.sleep();   // 继承自 Animal
+    myDog.bark();    // Dog 自有的方法
+    return 0;
+}
+```
+#### 继承的构造函数与析构函数
+- 派生类的构造函数必须显式调用父类的构造函数，除非是无参构造，否则会报错
+- 析构不用显式调用
+- 构造函数会自动按顺序调用：先基类，再派生类。
+- 析构函数会自动按逆序调用：先派生类，再基类。
+
+#### **继承中的同名成员(静态/非静态)**
+- 调用时默认为子类的成员
+- 想调用父类的成员应该加作用域
+```cpp
+class Base {
+    public:
+    int a = 10;
+    Base(int x) :a(x){}
+};
+class Derived : public Base {
+    public:
+    int a = 20;
+    Derived(int x) :Base(x), a(x){}//显式调用父类的构造函数
+};
+int main() {
+    Derived d(20);
+    cout << d.a << endl; // 默认访问子类成员
+    cout << d.Base::a << endl; // 添加作用域访问父类成员
+}
+```
+
+
+
+#### 多重继承
+- 一个类可以继承多个基类(不建议)：
+- 容易出现同名成员，要带作用域
+```cpp
+class A {};
+class B {};
+class C : public A, public B {};  // 多重继承
+```
+
+
+**钻石问题(菱形继承)**
+```cpp
+      A//基类
+     / \
+    B   C//都是派生类
+     \ /
+      D //D继承了A和B
+      //D通过两条路径继承了A
+class A {
+public:
+    int data = 100;
+    void print() {
+        cout << "A::print()" << endl;
+    }
+};
+class B : public A {};
+class C : public A {};
+
+class D : public B, public C {};  // 多重继承
+
+int main() {
+    D d;
+    // d.data;           //编译错误！二义性！
+    // d.print();        //同样二义性！
+    cout << d.B::data << endl;//正确
+    cout << d.C::data << endl;//正确
+    return 0;
+}
+```      
+**解决方法**
+- 引入虚继承virtual
+```cpp
+class A {
+public:
+    int data = 100;
+    void print() {
+        cout << "A::print()" << endl;
+    }
+};
+class B : virtual public A {};   // 虚继承
+class C : virtual public A {};   // 虚继承
+class D : public B, public C {}; // 此时只有一个 A 副本
+int main() {
+    D d;
+    cout << d.data << endl;       // 正确输出：100
+    d.print();                    // 正确调用
+    return 0;
+}
+```
+| 普通继承 | 虚继承 |
+|---------|--------|
+| 每个派生类都拥有独立的基类副本 | 所有派生类共享同一个基类实例 |
+| 内存中存在多个 `A` | 内存中只有一个 `A` |
+| 导致二义性 | 消除二义性 |
+
+- 虚基类的构造函数必须由最远的派生类即D直接调用，B和C不能调用A的构造
+- 且D不能调用B  C的构造
+```cpp
+class D : public B, public C {
+public:
+    D(int x) : A(x), B(x), C(x) {}  //错误！因为B和C没有B(int x)、C(int x)构造函数
+    
+    D(int x) : A(x) {}  // ✅ 只有D调用A，如果B或C存在有参构造函数，D就要显式调用它们
+};
+```
+
 ### 多态
-
-
-
 
 ### 构造函数
 **构造函数**和**析构函数**是类的两个特殊成员函数，分别负责**对象的初始化**和**对象销毁时的资源清理**，二者均由编译器自动调用，`无需手动触发`
@@ -1521,7 +1742,6 @@ class Person
 {
 
 public:
-
     int age;
     Person()
     {
@@ -1544,7 +1764,6 @@ public:
 
 
 //通过值传递给函数传参
-
 void test1(Person p)
 {
     cout <<"拷贝构造函数传递参数值"<<endl;
@@ -1555,9 +1774,6 @@ void test0()
     Person x1(30);
     test1(x1);
 }
-
-
-
 
 //值方式返回局部对象
 Person test2()
@@ -1588,8 +1804,6 @@ int main()
     cout<<"程序执行到这了"<<endl;
     system("pause");
 }
-
-
 ```
 
 
