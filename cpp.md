@@ -542,6 +542,226 @@ int main()
 }
 ```
 
+### 关键字extern
+
+| 概念       | 含义                                                                 |
+|------------|----------------------------------------------------------------------|
+| **定义**   | 为变量分配内存（或为函数提供实现），且只能有一次（否则会报“重复定义”） |
+| **声明**   | 告诉编译器变量/函数的类型和名称，不分配内存，可多次声明               |
+
+- `extern` 的核心就是**仅做声明，不做定义**，它的使命是“跨文件/跨作用域引用已定义的变量/函数”。
+
+
+#### 场景1：跨文件共享全局变量（最常用）
+假设你有两个源文件：`main.cpp` 和 `utils.cpp`，想在 `main.cpp` 中使用 `utils.cpp` 里定义的全局变量。
+
+✅ 正确写法：
+```cpp
+// utils.cpp —— 定义全局变量（分配内存）
+int g_num = 100; // 定义：分配内存，初始化值为100
+```
+```cpp
+// main.cpp —— 声明并使用外部变量
+// extern声明：告诉编译器g_num的定义在其他文件中
+extern int g_num; 
+int main() {
+    cout << g_num << endl; // 输出：100（访问utils.cpp中的g_num）
+    g_num = 200; // 可以修改（因为只是声明，变量本身在utils.cpp中已定义）
+    cout << g_num << endl; // 输出：200
+    return 0;
+}
+```
+
+
+#### 场景2：跨文件共享函数
+函数默认具有“外部链接性”，因此 `extern` 修饰函数是可选的，但显式写 `extern` 能让代码更清晰：
+```cpp
+// utils.cpp —— 定义函数（提供实现）
+int add(int a, int b) {
+    return a + b;
+}
+```
+```cpp
+// main.cpp —— 声明并使用外部函数
+// 方式1：显式extern声明函数（推荐，语义清晰）
+extern int add(int a, int b); 
+
+// 方式2：省略extern（函数默认外部链接，等价于上面）
+// int add(int a, int b);
+int main() {
+    cout << add(3, 5) << endl; // 输出：8
+    return 0;
+}
+```
+
+#### 场景3：`extern "C"` —— 兼容C语言编译（重要）
+C++编译器会对函数名做“名字修饰（name mangling）”（比如把 `add(int, int)` 改成 `_Z3addii`），而C编译器不会。如果想在C++代码中调用C语言编译的函数（比如C写的库），需要用 `extern "C"` 告诉C++编译器：“按C语言的规则处理这个函数”。
+
+示例：
+```cpp
+// 头文件 utils.h（供C和C++共用）
+#ifdef __cplusplus
+extern "C" { // 告诉C++编译器，花括号内按C规则编译
+#endif
+int add(int a, int b); // C风格函数声明
+#ifdef __cplusplus
+}
+#endif
+```
+
+```cpp
+// utils.c —— C语言实现
+#include "utils.h"
+int add(int a, int b) {
+    return a + b;
+}
+```
+
+```cpp
+// main.cpp —— C++调用C函数
+#include <iostream>
+#include "utils.h"
+using namespace std;
+
+int main() {
+    cout << add(3, 5) << endl; // 正确调用C语言编译的add函数
+    return 0;
+}
+```
+#### 场景4：声明全局作用域的变量（局部作用域中）
+如果局部作用域中有和全局变量同名的变量，想访问全局变量，可通过 `extern` 声明：
+```cpp
+int num = 10; // 全局变量
+
+int main() {
+    int num = 20; // 局部变量（覆盖全局）
+    cout << num << endl; // 输出：20（局部变量）
+    
+    extern int num; // 声明：引用全局的num
+    cout << num << endl; // 输出：10（全局变量）
+    return 0;
+}
+```
+#### `extern` 的常见误区
+1. **`extern` 声明时不要初始化**：
+   `extern int g_num = 100;` 不是纯声明，而是**定义**（编译器会分配内存），如果多个文件写这个，会报重复定义错误。
+2. **`extern` 不改变变量的存储类型**：
+   它只负责“链接性”，不影响变量是全局/静态/局部（比如 `static int g_num;` 是文件内私有，`extern` 也无法跨文件访问）。
+3. **全局常量默认是内部链接**：
+   `const int MAX = 100;`（全局）默认只能在当前文件访问，想跨文件共享，需要写 `extern const int MAX = 100;`（定义） + `extern const int MAX;`（声明）。
+
+
+### 关键字virtual
+
+`virtual`是用于实现**多态**的核心关键字，主要用在类的成员函数上。
+- 普通成员函数：就像固定的指令，调用时直接执行“写死”的版本。在编译阶段就绑定地址
+- 虚函数（`virtual` 修饰的函数）：就像一个“接口/占位符”，程序运行时会根据**实际对象的类型**，动态选择要执行的函数版本，而不是根据指针/引用的类型。在运行阶段再绑定地址
+
+1. 基础定义：虚函数的声明
+在基类中用 `virtual` 修饰成员函数，子类可以重写（override）这个函数：
+
+```cpp
+// 基类：动物
+class Animal {
+public:
+    // 声明虚函数：发出声音
+    virtual void makeSound() {
+        cout << "动物发出声音" << endl;
+    }
+    // 虚析构函数（重要！）
+    virtual ~Animal() {}
+};
+// 子类：猫
+class Cat : public Animal {
+public:
+    // 重写基类的虚函数（override可选，但建议加，增强可读性）
+    void makeSound() override {
+        cout << "喵喵喵" << endl;
+    }
+};
+// 子类：狗
+class Dog : public Animal {
+public:
+    void makeSound() override {
+        cout << "汪汪汪" << endl;
+    }
+};
+int main() {
+    // 多态核心：基类指针/引用指向子类对象
+    Animal* animal1 = new Cat();
+    Animal* animal2 = new Dog();
+    // 运行时动态选择对应子类的函数
+    animal1->makeSound(); // 输出：喵喵喵
+    animal2->makeSound(); // 输出：汪汪汪
+    // 释放内存
+    delete animal1;
+    delete animal2;
+    return 0;
+}
+```
+2. 关键细节
+- **虚函数的生效条件**：
+  必须通过**基类的指针或引用**调用，才能触发多态；如果直接用子类对象调用，和普通函数效果一致。
+- **虚析构函数**：
+  如果基类有虚函数，建议将析构函数也声明为 `virtual`。否则当用基类指针删除子类对象时，可能只调用基类析构函数，导致子类的资源泄漏。
+- **override 关键字**：
+  C++11 新增的 `override` 不是必须的，但加在子类重写的函数后，编译器会检查是否真的重写了基类的虚函数（比如函数名、参数写错时会报错），避免低级错误。
+
+
+
+3. **纯虚函数（virtual xxx xxx() = 0）**：
+
+    包含纯虚函数的类就是 “抽象类”，抽象类的核心规则是：不能直接创建对象（实例化）；如果子类继承了抽象类，但没有把父类所有的纯虚函数都重写实现，那么这个子类也会变成抽象类，同样不能实例化。
+    virtual void makeSound() = 0;就是纯虚函数
+    virtual void makeSound();是普通虚函数，默认提供实现
+   ```cpp
+   class Animal {
+   public:
+       // 纯虚函数
+       //注意不是virtual void makeSound();
+       //virtual void makeSound();是普通虚函数，默认提供实现
+       //可以实例化，子类可以选择性重写
+       virtual void makeSound() = 0;//纯虚函数，必须在子类中重写实现，否则无法实例化
+       virtual ~Animal() {}
+   };
+   // Cat必须重写makeSound，否则Cat也是抽象类，无法实例化
+   class Cat : public Animal {
+   public:
+       void makeSound() override {
+           cout << "喵喵喵" << endl;
+       }
+   };
+   ```
+4. **virtual 不能修饰的内容**：
+   - 全局函数、静态成员函数（static）；
+   - 构造函数（构造函数执行时，对象的多态性还未建立，无法虚调用）；
+   - 内联函数（inline）：加 `virtual` 后，inline 会失效（除非通过对象直接调用，而非指针/引用）
+
+5. **虚析构函数**
+
+- 在使用继承和多态时，基类的析构函数应声明为虚函数，以确保通过基类指针删除派生类对象时，
+- 派生类的析构函数能够被正确调用，避免资源泄漏。
+```cpp
+class Base {
+public:
+    ~Base() { // 非虚析构
+        cout << "Base 析构" << endl;
+    }
+};
+class Derived : public Base {
+public:
+    ~Derived() {
+        cout << "Derived 析构" << endl; // 不会被调用！
+    }
+};
+
+int main() {
+    Base* p = new Derived(); // 基类指针指向派生类对象
+    delete p; // 仅调用 Base 析构，Derived 析构被跳过,内存未释放
+    return 0;
+}
+```
+
 ### string类型
 在 C++ 中，`std::string` 是标准库提供的字符串类型，用于方便地处理文本数据。它封装了字符串的存储和操作逻辑，相比 C 语言中的字符数组（`char[]`）更加安全、易用。
 1. **动态大小**：自动管理内存，无需手动分配/释放空间
@@ -754,6 +974,27 @@ int system(const char* command);
    
    Person* p = new Person();  // 分配Person对象，自动调用构造函数
    ```
+4. **new可以通过operator重载**
+```cpp
+// 全局重载 operator new
+void* operator new(size_t size) {
+    cout << "全局 new：分配 " << size << " 字节" << endl;
+    void* p = malloc(size);
+    if (!p) throw bad_alloc();
+    return p;
+}
+// 全局重载 operator delete
+void operator delete(void* p) {
+    cout << "全局 delete：释放内存" << endl;
+    free(p);
+}
+int main() {
+    int* arr = new int[5]; // 调用全局重载的 new
+    delete[] arr; // 注意：数组需重载 operator new[]/delete[]
+    return 0;
+}
+```
+
 - **必须释放内存**：用 `new` 分配的内存不会自动释放，需用 `delete`（单个对象）或 `delete[]`（数组）手动释放，否则会导致内存泄漏。
   ```cpp
   delete num;    // 释放单个对象
@@ -1020,6 +1261,7 @@ printInfo("王五", 22, "男");        // 不使用默认值
 
 
 ### 函数重载
+
 **函数重载** 是指在同一作用域内，可以可以定义多个同名函数，只要它们的**参数列表不同**（参数个数、类型或顺序不同）。编译器会根据调用时提供的实参自动匹配到对应的函数版本。
 
 函数重载的判定依据是**参数列表（形参的数量、类型或顺序）**，与返回值类型无关。
@@ -1398,7 +1640,10 @@ class 类名
    - 类内部可访问，派生类也可访问，但类外部不可访问。
    - 主要用于继承场景，平衡封装性和扩展性。
 
-- 函数不存储在类中，不占用类的空间
+- 静态/非静态成员函数存储在代码区，不存储在类中，不占用类的空间
+- 静态成员变量在bss段/data段，不在类中
+- 非静态成员变量存储在栈/堆，存储在类中，占用类的空间，首个非静态成员变量的地址就是类的对象地址
+- 如果有虚函数，对象的地址是虚函数指针的地址，第二个地址才是数据成员变量的地址
 #### 封装示例代码
 下面是一个体现封装特性的学生类（`Student`）示例：
 
@@ -1659,6 +1904,59 @@ public:
 
 ### 多态
 
+**静态多态**：函数模板、函数重载
+
+
+**动态多态：**
+1. 有继承关系
+2. 子类重写父类的虚函数(virtual),函数返回值类型 函数名 参数列表完全相同
+3. 父类指针或引用指向子类对象时，调用的是子类的函数
+```cpp
+class Animal {//父类
+    public:
+    void makeSound()//普通函数
+    {
+        cout << "动物发出声音" << endl;
+    }
+    virtual void makeSound1()//虚函数
+    {
+        cout << "动物发出声音1" << endl;
+    }
+
+};
+class Dog : public Animal { //子类
+    public:
+    void makeSound()//重写父类的普通函数
+    {
+        cout << "汪汪汪" << endl;
+    }
+    void makeSound1()//重写父类的虚函数
+    {
+        cout << "汪汪汪1" << endl;
+    }
+
+};
+dospeak(Animal& animal) {//父类指针或引用调用子类，编译时确定了函数，因此调用父类的
+    animal.makeSound();
+}
+dospeak0(Dog& animal) {//指针或引用直接调用子类，编译时确定了函数，因此调用子类的
+    animal.makeSound();
+}
+dospeak1(Animal& animal) {//父类指针或引用调用子类，运行时才确定函数，因此调用子类的
+    animal.makeSound1();}
+int main() {
+    Dog dog;
+    dospeak(dog);//我们希望输出“汪汪汪”，实际输出“动物发出声音”
+    dospeak0(dog);//成功输出“汪汪汪”
+    dospeak1(dog);//成功输出“汪汪汪1”
+}
+```
+
+**虚函数表与虚函数指针**
+- 虚函数表：属于类，每类一份，保存所有的虚函数的函数指针，是程序的只读代码段
+- 虚函数指针：属于对象，每个对象一份，指向其类对应的虚函数表，存储在对象的内存空间
+- 因此一个包含虚函数的类的实例化对象，其大小至少是8字节(64位系统)，因为虚函数指针
+- 所有同类对象都指向同一份虚函数表，子类重写虚函数时，会覆盖父类的虚函数表
 ### 构造函数
 **构造函数**和**析构函数**是类的两个特殊成员函数，分别负责**对象的初始化**和**对象销毁时的资源清理**，二者均由编译器自动调用，`无需手动触发`
 
