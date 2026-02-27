@@ -16,7 +16,7 @@ set(CYCLONEDDS_CXX_HOME /home/cyclonedds-cxx)#cyclonedds-cxx
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}  # 工程根目录
     ${CYCLONEDDS_HOME}/include
-    ${CYCLONEDDS_CXX_HOME}/include
+    ${CYCLONEDDS_CXX_HOME}/include/ddscxx
 )
 
 # 库文件目录（公共目录，两个程序共用）

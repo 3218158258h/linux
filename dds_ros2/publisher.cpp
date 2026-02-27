@@ -62,7 +62,7 @@ int main() {
     while (true) {
         // 填充消息内容
         // 根据 HelloWorldData_.hpp 文件中 HelloWorldData_ 结构的定义来设置字段
-        // 字段名为 user_id_ 和 message_ (使用生成的 getter/setter 函数)
+        // 字段名为 user_id_ 和 message_ 
         msg_instance.user_id_(count); // 设置 user_id_
 
         // --- 关键：设置 message_ 字段 ---

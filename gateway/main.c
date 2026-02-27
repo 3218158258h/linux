@@ -1,4 +1,4 @@
-#include "app/app_runner.h"
+#include "include/app_runner.h"
 #include "daemon/daemon_runner.h"
 #include "ota/ota_runner.h"
 #include <stdlib.h>

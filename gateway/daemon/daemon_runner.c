@@ -1,5 +1,5 @@
-#include "daemon_runner.h"
-#include "daemon_process.h"
+#include "../include/daemon_runner.h"
+#include "../include/daemon_process.h"
 #include "thirdparty/log.c/log.h"
 #include <sys/wait.h>
 #include <stdlib.h>

@@ -9,7 +9,7 @@
 
 #define topic_name "rt/hello_world_receiver"
 
-int main() {
+int main() {//请留意注释，修改消息命名空间
 
         // --- 1. 创建 Domain Participant ---
         // 使用默认域 (Domain ID 0)

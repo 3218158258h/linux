@@ -1,3 +1,5 @@
+## C++基础
+
 ### 命名空间
 在 C++ 中，**命名空间（Namespace）** 是用于解决命名冲突的核心机制，它允许将全局作用域划分为多个独立的、可命名的作用域，避免不同模块/库中的标识符（变量、函数、类等）重名。
 
@@ -230,214 +232,136 @@ int main() {
 `结果：10, 20, 3.14`  
 
 
-### 函数模板
-C++ 中的**函数模板**是一种泛型编程工具，允许你编写与类型无关的函数，编译器会根据调用时传入的实参类型，自动生成对应类型的函数实例（模板实例化）。它的核心价值是**代码复用**，避免为不同类型重复编写逻辑相同的函数（比如交换两个整数、两个字符串、两个自定义对象的逻辑完全一致）。
+### 左值和右值
+**右值引用** 是 C++11 引入的核心特性之一，是实现**移动语义**和**完美转发**的基础。它的语法是 `T&&`，但与传统的“左值引用” `T&` 有本质区别。
 
-#### 基本语法
-函数模板的定义以 `template` 关键字开头，后跟**模板参数列表**（用尖括号 `<>` 包裹），然后是普通函数的定义。
+#### 一、什么是左值和右值？
+理解右值引用的前提是区分 **左值** 和 **右值**：
+| 类型 | 特点 | 示例 |
+|------|------|------|
+| **左值（lvalue）** | 有名字、可取地址、生命周期较长 | 变量 `int x = 5;` 中的 `x` |
+| **右值（rvalue）** | 临时对象、无名字、即将销毁 | 字面量 `42`、函数返回的临时对象 `func()` |
 
-**语法格式**
+ - **左值** = 能出现在赋值号左边的东西（如变量）  
+ - **右值** = 只能出现在右边的东西（如字面量、临时值）
+
+C++11进一步将右值细分为：
+- **纯右值（prvalue）**：如 `5`, `func()`（返回非引用）
+- **将亡值（xvalue, eXpiring value）**：如 `std::move(x)` 的结果
+
+
+#### 二、右值引用的定义与绑定规则
+
+ 1. 语法
 ```cpp
-template <typename T1, typename T2>  // 模板参数列表：T是类型参数（typename 可替换为 class）
-返回值类型 函数名(参数列表) {
-    // 函数逻辑（使用T1, T2 作为类型）
-}
+T&& rref = /* 必须是一个右值 */;
 ```
-- `template`：声明这是一个模板。
-- `<typename T1, typename T2>`：模板参数列表，`T1` 是**类型形参**（可以理解为“类型占位符”），`typename` 和 `class` 在此处等价（推荐用 `typename` 更语义化）。
-- 函数体内可以像使用普通类型（如 `int`、`string`）一样使用 `T1, T2`。
+#### 2. 绑定规则（关键！）
+| 引用类型       | 可绑定到左值？ | 可绑定到右值？ |
+|----------------|----------------|----------------|
+| `T&`           | ✅             | ❌             |
+| `const T&`     | ✅             | ✅（经典技巧） |
+| `T&&`          | ❌             | ✅             |
+| `const T&&`    | ❌             | ✅（少见）     |
 
-- 最简单的示例：交换两个值
+✅ 正确示例：
 ```cpp
-#include <iostream>
-using namespace std;
-// 函数模板：交换两个任意类型的值
-template <typename T>
-void swapValue(T& a, T& b) {
-    T temp = a;
-    a = b;
-    b = temp;
-}
-int main() {
-    // 实例化1：T = int
-    int x = 10, y = 20;
-    swapValue(x, y);
-    cout << "int交换后：x=" << x << ", y=" << y << endl;  // 输出：x=20, y=10
-    // 实例化2：T = double
-    double m = 3.14, n = 6.28;
-    swapValue(m, n);
-    cout << "double交换后：m=" << m << ", n=" << n << endl;  // 输出：m=6.28, n=3.14
-    // 实例化3：T = string
-    string s1 = "hello", s2 = "world";
-    swapValue(s1, s2);
-    cout << "string交换后：s1=" << s1 << ", s2=" << s2 << endl;  // 输出：s1=world, s2=hello
-    return 0;
-}
+int&& a = 42;               // OK：42 是右值
+int&& b = int(10);          // OK：临时对象
+int x = 5;
+int&& c = std::move(x);     // OK：std::move 把 x 转为右值引用（xvalue）
 ```
 
-#### 分类
-函数模板的参数分为两类：**类型参数** 和 **非类型参数**。
-
-**1. 类型参数（最常用）**
-用 `typename T` 或 `class T` 声明，表示“任意类型”（内置类型、自定义类型均可）。
-- 可以声明多个类型参数：
-  ```cpp
-  template <typename T1, typename T2>
-  T1 add(T1 a, T2 b) {
-      return a + b;  // 自动类型转换为 T1
-  }
-
-  // 调用
-  int res1 = add(10, 3.14);  // T1=int, T2=double → 返回13
-  double res2 = add(3.14, 10);  // T1=double, T2=int → 返回13.14
-  ```
-
-**非类型参数（数值参数）**
-表示一个**常量值**（必须是编译期可确定的常量），语法是直接写类型（如 `int`、`size_t`），而非 `typename`。
-- 常用场景：处理数组、固定长度的逻辑。
-  ```cpp
-  // 非类型参数 N：数组长度（编译期常量）
-  template <typename T, int N>
-  T sumArray(T (&arr)[N]) {  // 数组引用，避免数组退化为指针
-      T sum = 0;
-      for (int i = 0; i < N; ++i) {
-          sum += arr[i];
-      }
-      return sum;
-  }
-
-  // 调用
-  int arr1[] = {1,2,3,4,5};
-  cout << sumArray(arr1) << endl;  // N=5，输出15
-
-  double arr2[] = {1.1, 2.2, 3.3};
-  cout << sumArray(arr2) << endl;  // N=3，输出6.6
-  ```
-  ⚠️ 注意：非类型参数的类型限制（C++11/17/20 逐步放宽）：
-  - 只能是整数类型（`int`、`long`、`size_t`）、枚举、指针/引用（指向全局变量/函数）、`std::nullptr_t`；
-  - 不能是浮点数（`double`、`float`）、类类型（如 `std::string`）。
-
-#### 函数模板的实例化
-编译器不会直接编译模板本身，而是在**调用时**根据实参类型生成具体的函数（称为“实例化”）。实例化分为两种：
-
-1. 隐式实例化（最常用）
-编译器自动推导模板参数的类型，无需手动指定：
+❌ 错误示例：
 ```cpp
-swapValue(x, y);  // 隐式推导 T=int
+int x = 5;
+int&& d = x;                // 编译错误！x 是左值，不能绑定到 T&&
 ```
 
-2. 显式实例化
-手动指定模板参数类型（解决推导失败、强制特定类型的场景）：
+---
+
+#### 三、`std::move` 的作用
+
+`std::move` **不移动任何东西**！它只是一个**类型转换工具**：
+
 ```cpp
-// 显式指定 T=double
-swapValue<double>(x, y);  // 即使x/y是int，也会先转换为double再交换
-
-// 推导失败的场景（比如参数类型不一致）
-template <typename T>
-T add(T a, T b) { return a + b; }
-
-// add(10, 3.14);  // 报错：无法推导 T（int和double冲突）
-add<int>(10, 3.14);    // 显式指定 T=int，3.14转为int（3），返回13
-add<double>(10, 3.14); // 显式指定 T=double，10转为double，返回13.14
-```
-
-#### 函数模板的重载
-函数模板可以和普通函数重载，也可以和其他模板重载。编译器会按**优先级**选择调用的函数：
-
-**重载规则（优先级从高到低）**
-1. 普通函数（非模板）；
-2. 模板特化（见下文）；
-3. 模板函数（匹配度更高的优先）。
-
-**示例：模板重载**
-```cpp
-#include <iostream>
-using namespace std;
-
-// 1. 普通函数（处理int）
-int add(int a, int b) {
-    cout << "普通函数：";
-    return a + b;
-}
-
-// 2. 模板函数（通用类型）
-template <typename T>
-T add(T a, T b) {
-    cout << "模板函数：";
-    return a + b;
-}
-
-// 3. 模板重载（两个不同类型）
-template <typename T1, typename T2>
-auto add(T1 a, T2 b) {  // C++14 起 auto 自动推导返回值
-    cout << "重载模板：";
-    return a + b;
-}
-
-int main() {
-    cout << add(10, 20) << endl;        // 调用普通函数（优先级更高）→ 输出：普通函数：30
-    cout << add(10.5, 20.5) << endl;    // 调用模板函数 → 输出：模板函数：31
-    cout << add(10, 20.5) << endl;      // 调用重载模板 → 输出：重载模板：30.5
-    return 0;
+template<typename T>
+typename std::remove_reference<T>::type&& move(T&& t) noexcept {
+    return static_cast<typename std::remove_reference<T>::type&&>(t);
 }
 ```
 
-#### 函数模板的特化
-当模板对某些特定类型需要特殊逻辑时，使用**模板特化**（覆盖模板的通用逻辑）。
+- 它把**左值**强制转换成**右值引用**（xvalue），从而可以触发移动构造或移动赋值。
+- 它只是“允许你移动”，实际是否移动取决于是否有对应的移动函数。
 
-#### 语法：显式特化（全特化）
+#### 示例：
 ```cpp
-// 通用模板
-template <typename T>
-bool isEqual(T a, T b) {
-    return a == b;
-}
-
-// 对 T=char* 的特化（处理字符串比较）
-template <>
-bool isEqual<char*>(char* a, char* b) {
-    return strcmp(a, b) == 0;  // 通用模板的 == 会比较指针地址，特化后比较字符串内容
-}
-
-// 调用
-char* s1 = "hello";
-char* s2 = "hello";
-char* s3 = "world";
-cout << isEqual(s1, s2) << endl;  // 特化版本，输出1
-cout << isEqual(s1, s3) << endl;  // 特化版本，输出0
+std::vector<int> v1 = {1, 2, 3};
+std::vector<int> v2 = std::move(v1); // v1 的内部指针被“偷走”
+// 此时 v1 处于有效但未指定状态（通常为空）
 ```
 
-#### 注意事项
-1. **模板的可见性**：模板的定义（实现）必须在调用点可见（不能只声明模板，把实现放在 `.cpp` 文件）。
-   - 原因：模板实例化需要看到完整的模板代码，因此模板通常定义在头文件（`.h`/`.hpp`）中。
+> ⚠️ 注意：`std::move` 后不要使用原对象，除非你知道它的状态！
 
-2. **类型限制**：模板中的操作必须对实例化的类型有效。
-   ```cpp
-   template <typename T>
-   void print(T a) {
-       cout << a << endl;
-   }
+---
 
-   struct MyStruct {};
-   // print(MyStruct{});  // 报错：cout 不支持 MyStruct 的输出（没有重载<<）
-   ```
-   解决：为自定义类型重载运算符（如 `operator<<`），或为模板特化。
+#### 四、右值引用的典型用途
 
-3. **与 constexpr/consteval 结合**：C++11 起，模板函数可以是 `constexpr`（编译期计算），C++20 起支持 `consteval`（强制编译期计算）：
-   ```cpp
-   template <int N>
-   constexpr int factorial() {
-       return N <= 1 ? 1 : N * factorial<N-1>();
-   }
+##### 1. 实现移动构造函数 / 移动赋值运算符
+```cpp
+class Widget {
+    Resource* ptr;
+public:
+    // 移动构造函数
+    Widget(Widget&& other) noexcept : ptr(other.ptr) {
+        other.ptr = nullptr; // 防止双重释放
+    }
+};
+```
 
-   int main() {
-       constexpr int res = factorial<5>();  // 编译期计算 5! = 120
-       cout << res << endl;
-       return 0;
-   }
-   ```
+##### 2. 支持高效容器操作
+```cpp
+std::vector<std::string> vec;
+vec.push_back("hello");           // 临时字符串 → 触发移动
+std::string s = "world";
+vec.push_back(std::move(s));      // 显式移动 s
+```
 
-### 关键字const
+##### 3. 完美转发（结合模板）
+```cpp
+template<typename T>
+void wrapper(T&& arg) {
+    foo(std::forward<T>(arg)); // 保持原始值类别（左值/右值）
+}
+```
+> 这里 `T&&` 是**转发引用（universal reference）**，不是普通右值引用！
+
+
+
+#### 五、常见误区
+
+| 误区 | 正确理解 |
+|------|----------|
+| “右值引用只能绑定临时对象” | 也能绑定 `std::move(x)` 的结果（xvalue） |
+| “`std::move` 会立即移动数据” | 它只是类型转换，移动由构造函数/赋值符完成 |
+| “右值引用本身是右值” | **命名的右值引用是左值！**例如：`void f(int&& x) { /* x 是左值 */ }` |
+
+> 🔥 关键点：**在函数体内，`x` 是一个有名字的变量 → 是左值！**  
+> 若想把它作为右值传递，必须再套一层 `std::move(x)` 或 `std::forward<T>(x)`。
+
+
+
+#### 六、总结
+
+- **右值引用 `T&&`**：只能绑定到右值（临时对象或 `std::move` 的结果）。
+- **核心价值**：实现移动语义，避免不必要的拷贝，提升性能。
+- **配合使用**：`std::move`（显式转右值）、移动构造函数、移动赋值运算符。
+- **注意**：移动后源对象应处于可析构状态（通常置空）。
+
+
+
+### 关键字const和constexpr
+#### const
 `const` 用于声明**常量**（即值不能被修改的变量），作用是“只读保护”，让代码更安全、更易维护。
 
 - 定义常量
@@ -495,6 +419,166 @@ public:
 ```cpp
 const Person p;//对象p的属性不可修改，但是mutable修饰的属性可修改（同上）
 ```
+#### constexpr
+`constexpr` 是 C++11 引入的关键字，用于**声明可在编译时求值的常量表达式**。它的核心目标是将计算从运行时移到编译时，提升性能、支持模板元编程，并增强类型安全。
+**一、基本作用**
+`constexpr` 可用于修饰：
+- **变量**
+- **函数（包括构造函数）**
+- **对象**
+前提是它们的值或行为**必须能在编译期确定**。
+
+**二、`constexpr` 变量**
+```cpp
+constexpr int x = 42;               // ✅ 合法：字面量初始化
+constexpr int y = x + 10;           // ✅ 合法：由 constexpr 表达式初始化
+constexpr int z = rand();           // ❌ 非法：rand() 在运行时才能调用
+```
+> 要求：  
+> - 初始化表达式必须是**常量表达式**（编译期可计算）  
+> - 类型必须是**字面类型（LiteralType）**（如 int、指针、简单 struct 等）
+
+**三、`constexpr` 函数**
+
+```cpp
+constexpr int square(int n) {
+    return n * n;
+}
+int main() {
+    constexpr int a = square(5);    // ✅ 编译时计算：a = 25
+    int b = square(6);              // ✅ 也可在运行时调用
+}
+```
+
+**C++11 限制（较严格）**    
+- 函数体只能包含 `return` 语句（不能有循环、局部变量等）
+- 所有参数和返回值必须是字面类型
+
+**C++14/17/20 放宽**
+- 允许**循环、条件语句、局部变量、多条语句**等
+- 示例（C++14 起合法）：
+  ```cpp
+  constexpr int factorial(int n) {
+      int result = 1;
+      for (int i = 2; i <= n; ++i)
+          result *= i;
+      return result;
+  }
+  ```
+> ⚠️ 注意：`constexpr` 函数**不一定在编译期执行**！  
+> - 如果传入的是运行时常量，则在运行时计算  
+> - 只有当所有参数都是编译期常量，且结果被用于需要常量表达式的上下文（如数组大小、模板参数），才会强制编译期求值。
+
+
+**四、`constexpr` 对象与构造函数**
+
+```cpp
+struct Point {
+    constexpr Point(int x, int y) : x(x), y(y) {}
+    constexpr int distance_sq() const {
+        return x * x + y * y;
+    }
+    int x, y;
+};
+
+constexpr Point p(3, 4);            // ✅ 编译期构造
+constexpr int d = p.distance_sq();  // ✅ 编译期计算：25
+```
+要求：
+- 成员变量必须是字面类型
+- 构造函数必须是 `constexpr`
+- 所有成员初始化必须在编译期完成
+
+**五、典型应用场景**
+1. **编译期计算**  
+   ```cpp
+   constexpr int N = 1024;
+   std::array<int, N> buf;  // 数组大小必须是编译期常量
+   ```
+
+2. **模板元编程**  
+   ```cpp
+   template<int N>
+   struct Factorial {
+       static constexpr int value = N * Factorial<N-1>::value;
+   };
+   ```
+
+3. **替代宏**（更安全）  
+   ```cpp
+   #define MAX_SIZE 100   // 宏，无类型检查，作用域全局
+   constexpr int max_size = 100; // 类型安全，作用域清晰
+   ```
+4. **性能优化**  
+   将重复计算移到编译期，减少运行时开销。   
+#### const与constexpr的区别
+1. **可用于必须使用编译期常量的场合**
+这是最核心的区别。
+
+| 场景 | `const` | `constexpr` |
+|------|--------|-------------|
+| 数组大小 | ❌（C++中非法） | ✅ |
+| 模板非类型参数 | ❌ | ✅ |
+| 枚举值初始化 | ❌ | ✅ |
+| `switch` 的 case 标签 | ❌ | ✅ |
+
+```cpp
+const int n = 10;
+int arr[n];  // ❌ 错误！C++ 中数组大小必须是编译期常量（C99 允许，但 C++ 不允许）
+
+constexpr int m = 10;
+int arr2[m]; // ✅ 合法：m 是编译期常量
+```
+
+```cpp
+template<int N>
+struct Buffer { char data[N]; };
+
+const int size = 5;
+Buffer<size> buf; // ❌ 错误：size 不是编译期常量
+
+constexpr int size2 = 5;
+Buffer<size2> buf2; // ✅ 合法
+```
+2. **保证在编译期计算，提升性能**
+- `constexpr` 表达式**一定在编译期求值**（当用于常量上下文时），避免运行时开销。
+- `const` 变量可能在运行时初始化，无法用于优化。
+
+```cpp
+const int x = some_runtime_function(); // 运行时计算，无法优化
+constexpr int y = 2 + 3 * 4;           // 编译器直接替换为 14，零运行时成本
+```
+
+3. **支持编译期函数和对象构造**
+`constexpr` 可修饰函数和类构造函数，实现**复杂的编译期逻辑**，而 `const` 不能。
+
+```cpp
+constexpr int factorial(int n) {
+    return n <= 1 ? 1 : n * factorial(n - 1);
+}
+
+constexpr int f = factorial(5); // 编译期计算出 120
+
+// const 无法做到这一点：
+// const int f2 = factorial(5); // 虽然能运行，但不保证编译期求值，
+//                              // 且不能用于数组大小等场景
+```
+
+**使用建议**
+- **定义常量时，优先用 `constexpr` 而不是 `const`**（只要值能在编译期确定）。
+- 例如：
+  ```cpp
+  // 好
+  constexpr double PI = 3.1415926535;
+  constexpr size_t MAX_THREADS = 8;
+
+  // 避免（除非值只能在运行时获得）
+  const double config_value = read_from_file(); // 此时只能用 const
+  ```
+> ✅ **记住**：  
+> - `const` → “运行时不变”  
+> - `constexpr` → “编译期已知 + 不变”  
+
 
 ### 关键字static
 - 定义在函数内部则作用域在内部，每次调用不会清零
@@ -904,49 +988,6 @@ s1.swap(s2);                 // s1 = "banana", s2 = "apple"
 ```
 
 
-
-
-
-
-
-
-
-
-### 函数system
-在 C/C++ 中，`system` 是一个标准库函数，用于调用操作系统的命令行指令。它的原型定义在 `<stdlib.h>`（C 语言）或 `<cstdlib>`（C++）头文件中
-```cpp
-int system(const char* command);
-```
-- 功能说明：
-- 接收一个字符串参数 `command`，该字符串是要在操作系统命令行中执行的指令
-- 执行成功时，返回命令的退出状态；执行失败时，返回特定的错误值（通常是 -1）
-
-- 常见用法示例：
-1. **在 Windows 系统中**：
-   ```cpp
-   #include <cstdlib>  // 包含 system 函数的头文件
-   
-   int main() {
-       system("dir");       // 列出当前目录文件（类似 Linux 的 ls）
-       system("pause");     // 暂停程序，显示"按任意键继续..."
-       system("notepad");   // 打开记事本程序
-       return 0;
-   }
-   ```
-
-2. **在 Linux/Unix 系统中**：
-   ```cpp
-   #include <cstdlib>
-   
-   int main() {
-       system("ls");        // 列出当前目录文件
-       system("sleep 3");   // 程序暂停 3 秒
-       system("gedit");     // 打开文本编辑器（视系统配置而定）
-       return 0;
-   }
-   ```
-
-
 ### 关键字new
 `new` 是用于动态分配内存的运算符/运算符，主要作用是在**堆（heap）** 上创建对象或数组，并返回指向该内存的指针。它与 C 语言的 `malloc` 类似，但更符合 C++ 的面向对象特性（会自动调用构造函数）。
 - 必须用delete释放内存，不可以用free
@@ -1037,6 +1078,96 @@ int main() {
     arr = nullptr;
     
     return 0;
+}
+```
+
+### Lambda表达式
+```cpp
+[capture](parameters) -> return-type {
+    // 函数体
+}
+```
+[capture] 是捕获列表，用于指定Lambda表达式中可以访问的变量。
+- 可以捕获外部变量，分为值捕获x和引用捕获&x。
+- 值捕获时，如果在表达式之后修改x变量，则捕获的x变量不会改变。
+- 引用捕获&x，如果在表达式之后修改x变量，则捕获的x变量也会改变。
+(parameters)是参数列表，调用时传入实参。
+return-type 是返回类型，可省略(自动推导)
+
+1. **基本定义**
+
+| 项目 | 捕获列表 `[...]` | 参数列表 `(...)` |
+|------|------------------|------------------|
+| **位置** | lambda 最开头，方括号内 | 捕获列表之后，圆括号内 |
+| **语法示例** | `[x, &y]` | `(int a, const std::string& b)` |
+| **作用** | **从定义处的外部作用域“带入”变量** | **在调用时由调用者传入值** |
+
+2. **核心区别：何时绑定？**
+
+| 特性 | 捕获列表 | 参数列表 |
+|------|--------|--------|
+| **绑定时机** | **定义 lambda 时**（创建闭包时） | **调用 lambda 时** |
+| **数据来源** | 定义 lambda 所在作用域的局部变量、this 等 | 调用表达式中传入的实参 |
+| **生命周期影响** | 按引用捕获时，需确保外部变量在 lambda 调用时仍有效 | 参数是调用时的副本或引用，生命周期由调用栈管理 |
+
+```cpp
+int main() {
+    int base = 10;
+    int multiplier = 2;
+    // 捕获 base（按值），参数为 x
+    auto lambda = [base](int x) {
+        return base + x;  // base 来自定义时，x 来自调用时
+    };
+    std::cout << lambda(5) << "\n"; // 输出 15 (10 + 5)
+    base = 100; // 修改外部 base
+    std::cout << lambda(5) << "\n"; // 仍输出 15！因为 base 是按值捕获的副本
+}
+```
+> **关键点**：  
+> - `base` 在 lambda **定义时**被捕获（值为 10），之后外部 `base` 改变不影响 lambda 内部。  
+> - `x` 在每次 **调用时**传入（如 5），可以不同。
+
+3. **能否修改？**
+
+| 捕获方式 | 能否在 lambda 内修改？ |
+|--------|---------------------|
+| `[x]`（按值） | ❌ 默认不能（C++11/14 中是 `const`）✅ 加 `mutable` 可修改副本（不影响外部） |
+| `[&x]`（按引用） | ✅ 可直接修改外部 `x` |
+而**参数**总是可以在函数体内修改（除非声明为 `const`）：
+```cpp
+auto f = [x](int y) mutable {
+    x += 10;   // 修改捕获的副本（需 mutable）
+    y *= 2;    // 修改参数（允许）
+    return x + y;
+};
+```
+
+捕获外部变量
+- Lambda 可以“捕获”其定义作用域中的变量。
+
+| 语法       | 含义 |
+|-----------|------|
+| `[x]`     | **按值捕获** `x`（只读副本） |
+| `[&x]`    | **按引用捕获** `x`（可修改原变量） |
+| `[=]`     | 按值捕获**所有**外部变量（隐式） |
+| `[&]`     | 按引用捕获**所有**外部变量 |
+| `[x, &y]` | 混合：`x` 按值，`y` 按引用 |
+| `[this]`  | 捕获当前对象的指针（C++11） |
+| `[=, this]` 或 `[&, this]` | C++17 起允许（避免歧义） |
+
+```cpp
+int main() {
+    int a = 10;
+    int b = 20;
+    // 按值捕获 a，按引用捕获 b
+    auto lambda = [a, &b]() {
+        std::cout << "a = " << a << "\n";      // 10
+        std::cout << "b = " << b << "\n";      // 20
+        // a = 100;   // ❌ 错误！按值捕获默认是 const（C++11/14）
+        b = 200;      // ✅ 可修改引用
+    };
+    lambda();
+    std::cout << "After: b = " << b << "\n"; // 200
 }
 ```
 
@@ -1957,6 +2088,7 @@ int main() {
 - 虚函数指针：属于对象，每个对象一份，指向其类对应的虚函数表，存储在对象的内存空间
 - 因此一个包含虚函数的类的实例化对象，其大小至少是8字节(64位系统)，因为虚函数指针
 - 所有同类对象都指向同一份虚函数表，子类重写虚函数时，会覆盖父类的虚函数表
+
 ### 构造函数
 **构造函数**和**析构函数**是类的两个特殊成员函数，分别负责**对象的初始化**和**对象销毁时的资源清理**，二者均由编译器自动调用，`无需手动触发`
 
@@ -1982,6 +2114,8 @@ int main() {
 | 有参构造函数       | 带参数，支持自定义初始化              | `Student(string n, int a, float s) { name = n; age = a; score = s; }`    |
 | 拷贝构造函数       | 参数为“同类对象的引用”，用于对象拷贝  | `Student(const Student& other) { name = other.name; age = other.age; }`  |
 | 委托构造函数       | 复用其他构造函数的逻辑（C++11 特性）  | `Student() : Student("", 0, 0.0) {}`（委托有参构造初始化）               |
+| 移动构造函数       | 参数为“同类对象的右值引用T&&”，用于资源转移，无效拷贝 | `Student(Student&& other) { name = move(other.name); age = other.age; }` |
+
 
 - 若用户定义了有参构造函数，则C++会提供默认拷贝构造，但不会提供无参构造
     - 因此如果使用无参的方法构造对象，则会报错，必须先定义默认构造函数
@@ -2012,8 +2146,20 @@ int main() {
 
 #### 3. 初始化列表（推荐用法）
 构造函数中初始化成员变量时，**推荐使用“初始化列表”**，而非在函数体中赋值。初始化列表在对象内存分配时直接初始化成员，效率更高（尤其对类类型成员），且某些场景下必须使用（如 `const` 成员、引用成员）。
+
+const 成员（const int age;）：const 成员必须在初始化列表初始化(或者类中)，不能在构造函数体中赋值。
+- 因为函数会先统一初始化，再调用构造函数赋值，赋值了两次，所以const成员必须在初始化列表初始化。
+
 引用成员（int& b;）：引用必须在创建时绑定对象，只能用初始化列表。
+- 同上
+
+基类的有参构造函数：基类的有参构造函数必须在初始化列表中调用。
+- 有参构造如果不在初始化列表调用，就没有参数，同时又没有默认构造，就会出错
+
+成员对象存在有参构造：必须在初始化列表中调用
+- 理由同上，成员对象的类无默认构造，如果不在初始化列表显显式调用，就没有参数，同时又没有默认构造，就会出错
 **结构**：构造函数():成员变量1(值1),成员变量2(值2),成员变量3(值3)...{函数体}
+
 **示例1**：
 ```cpp
 class Student {
@@ -2160,3 +2306,289 @@ int main() {
 }
 ```
 
+
+## 模板
+
+### 函数模板
+C++ 中的**函数模板**是一种泛型编程工具，允许你编写与类型无关的函数，编译器会根据调用时传入的实参类型，自动生成对应类型的函数实例（模板实例化）。它的核心价值是**代码复用**，避免为不同类型重复编写逻辑相同的函数（比如交换两个整数、两个字符串、两个自定义对象的逻辑完全一致）。
+
+#### 基本语法
+函数模板的定义以 `template` 关键字开头，后跟**模板参数列表**（用尖括号 `<>` 包裹），然后是普通函数的定义。
+
+**语法格式**
+```cpp
+template <typename T1, typename T2>  // 模板参数列表：T是类型参数（typename 可替换为 class）
+返回值类型 函数名(参数列表) {
+    // 函数逻辑（使用T1, T2 作为类型）
+}
+```
+- `template`：声明这是一个模板。
+- `<typename T1, typename T2>`：模板参数列表，`T1` 是**类型形参**（可以理解为“类型占位符”），`typename` 和 `class` 在此处等价（推荐用 `typename` 更语义化）。
+- 函数体内可以像使用普通类型（如 `int`、`string`）一样使用 `T1, T2`。
+
+- 最简单的示例：交换两个值
+```cpp
+#include <iostream>
+using namespace std;
+// 函数模板：交换两个任意类型的值
+template <typename T>
+void swapValue(T& a, T& b) {
+    T temp = a;
+    a = b;
+    b = temp;
+}
+int main() {
+    // 实例化1：T = int
+    int x = 10, y = 20;
+    swapValue(x, y);
+    cout << "int交换后：x=" << x << ", y=" << y << endl;  // 输出：x=20, y=10
+    // 实例化2：T = double
+    double m = 3.14, n = 6.28;
+    swapValue(m, n);
+    cout << "double交换后：m=" << m << ", n=" << n << endl;  // 输出：m=6.28, n=3.14
+    // 实例化3：T = string
+    string s1 = "hello", s2 = "world";
+    swapValue(s1, s2);
+    cout << "string交换后：s1=" << s1 << ", s2=" << s2 << endl;  // 输出：s1=world, s2=hello
+    return 0;
+}
+```
+
+#### 分类
+函数模板的参数分为两类：**类型参数** 和 **非类型参数**。
+
+**1. 类型参数（最常用）**
+用 `typename T` 或 `class T` 声明，表示“任意类型”（内置类型、自定义类型均可）。
+- 可以声明多个类型参数：
+  ```cpp
+  template <typename T1, typename T2>
+  T1 add(T1 a, T2 b) {
+      return a + b;  // 自动类型转换为 T1
+  }
+
+  // 调用
+  int res1 = add(10, 3.14);  // T1=int, T2=double → 返回13
+  double res2 = add(3.14, 10);  // T1=double, T2=int → 返回13.14
+  ```
+
+**非类型参数（数值参数）**
+表示一个**常量值**（必须是编译期可确定的常量），语法是直接写类型（如 `int`、`size_t`），而非 `typename`。
+- 常用场景：处理数组、固定长度的逻辑。
+  ```cpp
+  // 非类型参数 N：数组长度（编译期常量）
+  template <typename T, int N>
+  T sumArray(T (&arr)[N]) {  // 数组引用，避免数组退化为指针
+      T sum = 0;
+      for (int i = 0; i < N; ++i) {
+          sum += arr[i];
+      }
+      return sum;
+  }
+
+  // 调用
+  int arr1[] = {1,2,3,4,5};
+  cout << sumArray(arr1) << endl;  // N=5，输出15
+
+  double arr2[] = {1.1, 2.2, 3.3};
+  cout << sumArray(arr2) << endl;  // N=3，输出6.6
+  ```
+  ⚠️ 注意：非类型参数的类型限制（C++11/17/20 逐步放宽）：
+  - 只能是整数类型（`int`、`long`、`size_t`）、枚举、指针/引用（指向全局变量/函数）、`std::nullptr_t`；
+  - 不能是浮点数（`double`、`float`）、类类型（如 `std::string`）。
+
+#### 函数模板的实例化
+编译器不会直接编译模板本身，而是在**调用时**根据实参类型生成具体的函数（称为“实例化”）。实例化分为两种：
+
+1. 隐式实例化（最常用）
+编译器自动推导模板参数的类型，无需手动指定：
+```cpp
+swapValue(x, y);  // 隐式推导 T=int
+```
+
+2. 显式实例化
+手动指定模板参数类型（解决推导失败、强制特定类型的场景）：
+```cpp
+// 显式指定 T=double
+swapValue<double>(x, y);  // 即使x/y是int，也会先转换为double再交换
+
+// 推导失败的场景（比如参数类型不一致）
+template <typename T>
+T add(T a, T b) { return a + b; }
+
+// add(10, 3.14);  // 报错：无法推导 T（int和double冲突）
+add<int>(10, 3.14);    // 显式指定 T=int，3.14转为int（3），返回13
+add<double>(10, 3.14); // 显式指定 T=double，10转为double，返回13.14
+```
+
+#### 函数模板的重载
+函数模板可以和普通函数重载，也可以和其他模板重载。编译器会按**优先级**选择调用的函数：
+
+**重载规则（优先级从高到低）**
+1. 普通函数（非模板）；
+2. 模板特化（见下文）；
+3. 模板函数（匹配度更高的优先）。
+
+**示例：模板重载**
+```cpp
+#include <iostream>
+using namespace std;
+
+// 1. 普通函数（处理int）
+int add(int a, int b) {
+    cout << "普通函数：";
+    return a + b;
+}
+
+// 2. 模板函数（通用类型）
+template <typename T>
+T add(T a, T b) {
+    cout << "模板函数：";
+    return a + b;
+}
+
+// 3. 模板重载（两个不同类型）
+template <typename T1, typename T2>
+auto add(T1 a, T2 b) {  // C++14 起 auto 自动推导返回值
+    cout << "重载模板：";
+    return a + b;
+}
+
+int main() {
+    cout << add(10, 20) << endl;        // 调用普通函数（优先级更高）→ 输出：普通函数：30
+    cout << add(10.5, 20.5) << endl;    // 调用模板函数 → 输出：模板函数：31
+    cout << add(10, 20.5) << endl;      // 调用重载模板 → 输出：重载模板：30.5
+    return 0;
+}
+```
+
+#### 函数模板的特化
+当模板对某些特定类型需要特殊逻辑时，使用**模板特化**（覆盖模板的通用逻辑）。
+
+#### 语法：显式特化（全特化）
+```cpp
+// 通用模板
+template <typename T>
+bool isEqual(T a, T b) {
+    return a == b;
+}
+
+// 对 T=char* 的特化（处理字符串比较）
+template <>
+bool isEqual<char*>(char* a, char* b) {
+    return strcmp(a, b) == 0;  // 通用模板的 == 会比较指针地址，特化后比较字符串内容
+}
+
+// 调用
+char* s1 = "hello";
+char* s2 = "hello";
+char* s3 = "world";
+cout << isEqual(s1, s2) << endl;  // 特化版本，输出1
+cout << isEqual(s1, s3) << endl;  // 特化版本，输出0
+```
+
+#### 注意事项
+1. **模板的可见性**：模板的定义（实现）必须在调用点可见（不能只声明模板，把实现放在 `.cpp` 文件）。
+   - 原因：模板实例化需要看到完整的模板代码，因此模板通常定义在头文件（`.h`/`.hpp`）中。
+
+2. **类型限制**：模板中的操作必须对实例化的类型有效。
+   ```cpp
+   template <typename T>
+   void print(T a) {
+       cout << a << endl;
+   }
+
+   struct MyStruct {};
+   // print(MyStruct{});  // 报错：cout 不支持 MyStruct 的输出（没有重载<<）
+   ```
+   解决：为自定义类型重载运算符（如 `operator<<`），或为模板特化。
+
+3. **与 constexpr/consteval 结合**：C++11 起，模板函数可以是 `constexpr`（编译期计算），C++20 起支持 `consteval`（强制编译期计算）：
+   ```cpp
+   template <int N>
+   constexpr int factorial() {
+       return N <= 1 ? 1 : N * factorial<N-1>();
+   }
+
+   int main() {
+       constexpr int res = factorial<5>();  // 编译期计算 5! = 120
+       cout << res << endl;
+       return 0;
+   }
+   ```
+
+
+### 类模板
+
+## 智能指针
+C++ 智能指针（Smart Pointers）是C++11引入的一组模板类，用于自动管理动态分配的内存，从而避免内存泄漏、悬空指针等问题。它们通过RAII机制，在对象生命周期结束时自动释放所管理的资源。（定义在 `<memory>` 头文件中）：
+
+### 1. `std::unique_ptr`
+- **独占所有权**：一个资源只能被一个 `unique_ptr` 拥有。
+- **不可复制**，但可以**移动**
+- 析构时自动调用 `delete`
+
+
+```cpp
+#include <memory>
+#include <iostream>
+
+int main() {
+    std::unique_ptr<int> ptr(new int(42));
+    // 或使用 make_unique（推荐）
+    auto ptr2 = std::make_unique<int>(42);
+
+    std::cout << *ptr << std::endl;// 输出 42
+
+    // 转移所有权
+    auto ptr3 = std::move(ptr); // ptr 现在为 nullptr
+}
+```
+> ✅ 推荐优先使用 `std::make_unique<T>(args...)` 创建 `unique_ptr`。
+
+
+### 2. `std::shared_ptr`
+- **共享所有权**：多个 `shared_ptr` 可以指向同一对象。
+- 使用**引用计数**机制：当最后一个 `shared_ptr` 被销毁时，资源才被释放。
+- 线程安全（引用计数操作是原子的），但所指对象的访问不是线程安全的。
+- 有一定性能开销（引用计数 + 控制块）。
+
+```cpp
+#include <memory>
+#include <iostream>
+
+int main() {
+    auto sp1 = std::make_shared<int>(100);
+    auto sp2 = sp1; // 引用计数变为 2
+
+    std::cout << *sp1 << ", use_count: " << sp1.use_count() << std::endl;
+
+    // 当 sp1 和 sp2 都离开作用域，资源被释放
+}
+```
+
+> ✅ 推荐使用 `std::make_shared<T>(args...)` 创建 `shared_ptr`（更高效，一次内存分配）。
+
+---
+
+### 3. `std::weak_ptr`
+- **不拥有资源**，是对 `shared_ptr` 所管理对象的**弱引用**。
+- 用于**打破循环引用**（circular reference）问题。
+- 不能直接解引用，必须先通过 `lock()` 转换为 `shared_ptr`。
+
+```cpp
+#include <memory>
+#include <iostream>
+
+int main() {
+    std::shared_ptr<int> sp = std::make_shared<int>(200);
+    std::weak_ptr<int> wp = sp;
+
+    if (auto locked = wp.lock()) {
+        std::cout << *locked << std::endl; // 安全访问
+    } else {
+        std::cout << "Object already destroyed." << std::endl;
+    }
+}
+```
+
+> ⚠️ 循环引用示例（两个 `shared_ptr` 互相持有对方）会导致内存泄漏，此时应将其中一个改为 `weak_ptr`。
