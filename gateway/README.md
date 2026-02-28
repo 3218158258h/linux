@@ -5,7 +5,15 @@
 - 待开发功能：OTA升级、守护进程
 
 **编译运行**
+```bash
+sudo socat -d -d pty,link=/dev/ttyUSB0,raw,echo=0,mode=666 pty,link=/dev/ttyUSB1,raw,echo=0,mode=666 # 创建虚拟串口
+
+cat /dev/ttyUSB0 | hexdump -C # 监听
+
+echo -ne '\xF1\xDD\x04\x00\x01\x01\x02' > /dev/ttyUSB1 # 发送数据
 ```
+```bash
+# 修改Makefile
 make USE_DDS=1
 ./gateway app
 ```
