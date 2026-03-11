@@ -47,13 +47,13 @@ typedef enum {
 
 /* 分区信息 */
 typedef struct OtaPartition {
-    char name[32];
-    char device[64];
-    uint64_t size;
-    uint64_t used;
-    int is_active;
-    int is_valid;
-    int boot_count;
+    char name[32];// 分区名称
+    char device[64];// 设备名称
+    uint64_t size;// 分区大小(字节)
+    uint64_t used;// 已用空间(字节)
+    int is_active;// 是否为活动分区
+    int is_valid;// 是否有效
+    int boot_count;// 启动次数
 } OtaPartition;
 
 /* OTA配置 */
@@ -71,17 +71,17 @@ typedef struct OtaConfig {
 
 /* OTA管理器 */
 typedef struct OtaManager {
-    OtaConfig config;
-    OtaState state;
-    OtaPartition partition_a;
-    OtaPartition partition_b;
-    OtaPartition *active_partition;
-    OtaPartition *inactive_partition;
+    OtaConfig config;// OTA配置
+    OtaState state;// OTA状态
+    OtaPartition partition_a;// A分区信息
+    OtaPartition partition_b;// B分区信息
+    OtaPartition *active_partition;// 当前活动分区指针
+    OtaPartition *inactive_partition;// 当前非活动分区指针
     
-    char current_version[32];
-    char new_version[32];
-    int download_progress;
-    int is_initialized;
+    char current_version[32];// 当前版本号
+    char new_version[32];// 新版本号
+    int download_progress;// 下载进度(0-100)
+    int is_initialized;// 是否初始化
     
     /* 回调 */
     void (*on_state_changed)(struct OtaManager *manager, OtaState state);

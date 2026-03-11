@@ -13,6 +13,7 @@ cat /dev/ttyUSB0 | hexdump -C # 监听
 echo -ne '\xF1\xDD\x04\x00\x01\x01\x02' > /dev/ttyUSB1 # 发送数据
 ```
 ```bash
+#修改app_ota.c配置文件路径
 # 修改Makefile
 make USE_DDS=1
 ./gateway app

@@ -46,13 +46,8 @@ DDS_SRCS = $(SRC_DIR)/dds/app_dds.c \
            $(SRC_DIR)/dds/app_transport.c \
 		   $(SRC_DIR)/dds/GatewayData.c
 
-# 源文件 - Modbus模块
-MODBUS_SRCS = $(SRC_DIR)/modbus/app_modbus.c
-
 # 源文件 - OTA模块
-OTA_SRCS = $(SRC_DIR)/ota/app_ota.c \
-           $(SRC_DIR)/ota/ota_http.c \
-           $(SRC_DIR)/ota/ota_runner.c
+OTA_SRCS = $(SRC_DIR)/ota/app_ota.c
 
 # 第三方库源文件
 THIRDPARTY_SRCS = thirdparty/cJSON/cJSON.c \
@@ -63,10 +58,10 @@ THIRDPARTY_SRCS = thirdparty/cJSON/cJSON.c \
 MAIN_SRC = $(SRC_DIR)/main.c
 
 # 所有源文件
-SRCS = $(BASE_SRCS) $(MQTT_SRCS) $(DDS_SRCS) $(MODBUS_SRCS) $(OTA_SRCS) $(THIRDPARTY_SRCS) $(MAIN_SRC)
+SRCS = $(BASE_SRCS) $(MQTT_SRCS) $(DDS_SRCS)  $(OTA_SRCS) $(THIRDPARTY_SRCS) $(MAIN_SRC)
 
 # 目标文件
-OBJ_SRCS = $(BASE_SRCS) $(MQTT_SRCS) $(DDS_SRCS) $(MODBUS_SRCS) $(OTA_SRCS)
+OBJ_SRCS = $(BASE_SRCS) $(MQTT_SRCS) $(DDS_SRCS)  $(OTA_SRCS)
 OBJS = $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(OBJ_SRCS)) \
        $(OBJ_DIR)/cJSON.o \
        $(OBJ_DIR)/log.o \
@@ -120,7 +115,7 @@ all: dirs $(TARGET_BIN)
 
 # 创建目录
 dirs:
-	@mkdir -p $(OBJ_DIR)/mqtt $(OBJ_DIR)/dds $(OBJ_DIR)/modbus $(OBJ_DIR)/ota $(OBJ_DIR)/daemon $(BIN_DIR)
+	@mkdir -p $(OBJ_DIR)/mqtt $(OBJ_DIR)/dds  $(OBJ_DIR)/ota $(OBJ_DIR)/daemon $(BIN_DIR)
 
 # 链接
 $(TARGET_BIN): $(OBJS)
@@ -139,9 +134,6 @@ $(OBJ_DIR)/mqtt/%.o: $(SRC_DIR)/mqtt/%.c
 $(OBJ_DIR)/dds/%.o: $(SRC_DIR)/dds/%.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-# 编译源文件 - Modbus模块
-$(OBJ_DIR)/modbus/%.o: $(SRC_DIR)/modbus/%.c
-	$(CC) $(CFLAGS) -c -o $@ $<
 
 # 编译源文件 - OTA模块
 $(OBJ_DIR)/ota/%.o: $(SRC_DIR)/ota/%.c

@@ -2592,3 +2592,6 @@ int main() {
 ```
 
 > ⚠️ 循环引用示例（两个 `shared_ptr` 互相持有对方）会导致内存泄漏，此时应将其中一个改为 `weak_ptr`。
+
+## 哈希表
+unordered_map

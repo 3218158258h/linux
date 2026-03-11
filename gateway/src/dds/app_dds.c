@@ -1,3 +1,15 @@
+/**
+ * @file app_dds.c
+ * @brief DDS通信模块实现 - 基于Cyclone DDS
+ * 
+ * 功能说明：
+ * - DDS（Data Distribution Service）通信封装
+ * - 支持发布/订阅模式
+ * - 话题注册与管理
+ * - QoS策略配置
+ * - 自动发现和数据回调
+ */
+
 #include "app_dds.h"
 #include "../thirdparty/log.c/log.h"
 #include <stdio.h>
@@ -5,74 +17,104 @@
 #include <string.h>
 #include <time.h>
 
-
-
+/* 条件编译：是否启用Cyclone DDS */
 #ifdef USE_CYCLONE_DDS
 #include <dds/dds.h>
 #define DDS_ENABLED 1
-#include "GatewayData.h"
-#define MAX_DATA_LEN 4096 
+#include "GatewayData.h"  // IDL生成的数据类型
+#define MAX_DATA_LEN 4096
 #else
 #define DDS_ENABLED 0
 #endif
 
+/**
+ * @brief DDS话题信息结构体
+ * 
+ * 存储单个话题的配置和DDS实体句柄。
+ */
 typedef struct DdsTopicInfo {
-    char name[128];
-    char type_name[64];
-    DdsQosPolicy qos;
+    char name[128];           // 话题名称
+    char type_name[64];       // 数据类型名称
+    DdsQosPolicy qos;         // QoS策略
 #ifdef USE_CYCLONE_DDS
-    dds_entity_t topic;
-    dds_entity_t writer;
-    dds_entity_t reader;
+    dds_entity_t topic;       // 话题实体
+    dds_entity_t writer;      // 写入器实体
+    dds_entity_t reader;      // 读取器实体
 #else
-    void *topic;
+    void *topic;              // 占位指针
     void *writer;
     void *reader;
 #endif
-    int is_registered;
+    int is_registered;        // 是否已注册
 } DdsTopicInfo;
 
+/* 最大话题数量 */
 #define MAX_TOPICS 32
 
+/**
+ * @brief DDS内部管理结构体
+ * 
+ * 存储DDS参与者和所有话题信息。
+ */
 typedef struct DdsInternal {
-    DdsTopicInfo topics[MAX_TOPICS];
-    int topic_count;
+    DdsTopicInfo topics[MAX_TOPICS];  // 话题数组
+    int topic_count;                   // 话题计数
 #ifdef USE_CYCLONE_DDS
-    dds_entity_t participant;
-    dds_entity_t publisher;
-    dds_entity_t subscriber;
+    dds_entity_t participant;          // 参与者实体
+    dds_entity_t publisher;            // 发布者实体
+    dds_entity_t subscriber;           // 订阅者实体
 #endif
 } DdsInternal;
 
+/**
+ * @brief 获取默认QoS策略
+ * 
+ * @return 默认QoS配置
+ */
 DdsQosPolicy dds_qos_default(void)
 {
     DdsQosPolicy qos = {
-        .reliability = 0,
-        .durability = 0,
-        .history_depth = 1,
-        .deadline_ms = 0,
-        .lifespan_ms = 0
+        .reliability = 0,      // 尽力传输
+        .durability = 0,       // 易失性
+        .history_depth = 1,    // 历史深度1
+        .deadline_ms = 0,      // 无截止时间
+        .lifespan_ms = 0       // 无生命周期限制
     };
     return qos;
 }
 
+/**
+ * @brief 获取可靠QoS策略
+ * 
+ * @return 可靠QoS配置
+ */
 DdsQosPolicy dds_qos_reliable(void)
 {
     DdsQosPolicy qos = {
-        .reliability = 1,
-        .durability = 1,
-        .history_depth = 10,
-        .deadline_ms = 1000,
-        .lifespan_ms = 60000
+        .reliability = 1,      // 可靠传输
+        .durability = 1,       // 持久性
+        .history_depth = 10,   // 历史深度10
+        .deadline_ms = 1000,   // 截止时间1秒
+        .lifespan_ms = 60000   // 生命周期60秒
     };
     return qos;
 }
 
+/**
+ * @brief 查找话题信息
+ * 
+ * 根据话题名称查找已注册的话题。
+ * 
+ * @param manager DDS管理器指针
+ * @param name 话题名称
+ * @return 话题信息指针，未找到返回NULL
+ */
 static DdsTopicInfo *find_topic(DdsManager *manager, const char *name)
 {
     DdsInternal *internal = (DdsInternal *)manager->participant;
     if (!internal) return NULL;
     
+    // 遍历话题数组查找匹配项
     for (int i = 0; i < internal->topic_count; i++) {
         if (strcmp(internal->topics[i].name, name) == 0) {
             return &internal->topics[i];
@@ -81,6 +123,13 @@ static DdsTopicInfo *find_topic(DdsManager *manager, const char *name)
     return NULL;
 }
 
+/**
+ * @brief 取消订阅话题
+ * 
+ * @param manager DDS管理器指针
+ * @param topic_name 话题名称
+ * @return 0成功，-1失败
+ */
 int dds_unsubscribe(DdsManager *manager, const char *topic_name)
 {
     if (!manager || !topic_name) return -1;
@@ -94,6 +143,7 @@ int dds_unsubscribe(DdsManager *manager, const char *topic_name)
         return -1;
     }
     
+    // 删除读取器
     if (info->reader) {
         dds_delete(info->reader);
         info->reader = NULL;
@@ -104,13 +154,23 @@ int dds_unsubscribe(DdsManager *manager, const char *topic_name)
     return 0;
 }
 
-
+/**
+ * @brief 初始化DDS管理器
+ * 
+ * 创建DDS参与者、发布者和订阅者。
+ * 
+ * @param manager DDS管理器指针
+ * @param config 配置参数，NULL使用默认配置
+ * @return 0成功，-1失败
+ */
 int dds_init(DdsManager *manager, const DdsConfig *config)
 {
     if (!manager) return -1;
     
+    // 清零结构体
     memset(manager, 0, sizeof(DdsManager));
     
+    // 加载配置
     if (config) {
         memcpy(&manager->config, config, sizeof(DdsConfig));
     } else {
@@ -121,12 +181,14 @@ int dds_init(DdsManager *manager, const DdsConfig *config)
     }
     
 #if DDS_ENABLED
+    // 分配内部结构
     DdsInternal *internal = calloc(1, sizeof(DdsInternal));
     if (!internal) {
         log_error("Failed to allocate DDS internal structure");
         return -1;
     }
     
+    // 创建DDS参与者
     internal->participant = dds_create_participant(
         manager->config.domain_id, NULL, NULL);
     
@@ -136,6 +198,7 @@ int dds_init(DdsManager *manager, const DdsConfig *config)
         return -1;
     }
     
+    // 创建发布者和订阅者
     internal->publisher = dds_create_publisher(internal->participant, NULL, NULL);
     internal->subscriber = dds_create_subscriber(internal->participant, NULL, NULL);
     
@@ -155,6 +218,13 @@ int dds_init(DdsManager *manager, const DdsConfig *config)
     return 0;
 }
 
+/**
+ * @brief 使用默认配置初始化DDS管理器
+ * 
+ * @param manager DDS管理器指针
+ * @param domain_id 域ID
+ * @return 0成功，-1失败
+ */
 int dds_init_default(DdsManager *manager, int domain_id)
 {
     DdsConfig config = {
@@ -167,6 +237,15 @@ int dds_init_default(DdsManager *manager, int domain_id)
     return dds_init(manager, &config);
 }
 
+/**
+ * @brief 注册DDS话题
+ * 
+ * 创建话题实体并添加到管理器。
+ * 
+ * @param manager DDS管理器指针
+ * @param topic 话题配置
+ * @return 0成功，-1失败
+ */
 int dds_register_topic(DdsManager *manager, const DdsTopic *topic)
 {
     if (!manager || !topic) return -1;
@@ -174,11 +253,13 @@ int dds_register_topic(DdsManager *manager, const DdsTopic *topic)
     DdsInternal *internal = (DdsInternal *)manager->participant;
     if (!internal) return -1;
     
+    // 检查话题数量限制
     if (internal->topic_count >= MAX_TOPICS) {
         log_error("Max topics reached");
         return -1;
     }
     
+    // 添加话题信息
     DdsTopicInfo *info = &internal->topics[internal->topic_count];
     strncpy(info->name, topic->name, sizeof(info->name) - 1);
     strncpy(info->type_name, topic->type_name, sizeof(info->type_name) - 1);
@@ -188,6 +269,7 @@ int dds_register_topic(DdsManager *manager, const DdsTopic *topic)
     info->reader = 0;
     
 #if DDS_ENABLED
+    // 根据话题名称选择类型描述符
     dds_topic_descriptor_t *desc = NULL;
     if (strcmp(topic->name, "GatewayData") == 0) {
         desc = (dds_topic_descriptor_t*)&Gateway_DataType_desc;
@@ -195,6 +277,7 @@ int dds_register_topic(DdsManager *manager, const DdsTopic *topic)
         desc = (dds_topic_descriptor_t*)&Gateway_CommandType_desc;
     }
     
+    // 创建DDS话题
     if (desc) {
         info->topic = dds_create_topic(internal->participant, desc, topic->name, NULL, NULL);
         if (info->topic < 0) {
@@ -217,6 +300,15 @@ int dds_register_topic(DdsManager *manager, const DdsTopic *topic)
     return 0;
 }
 
+/**
+ * @brief 注销DDS话题
+ * 
+ * 删除话题相关的所有实体。
+ * 
+ * @param manager DDS管理器指针
+ * @param topic_name 话题名称
+ * @return 0成功，-1失败
+ */
 int dds_unregister_topic(DdsManager *manager, const char *topic_name)
 {
     if (!manager || !topic_name) return -1;
@@ -224,9 +316,11 @@ int dds_unregister_topic(DdsManager *manager, const char *topic_name)
     DdsInternal *internal = (DdsInternal *)manager->participant;
     if (!internal) return -1;
     
+    // 查找并删除话题
     for (int i = 0; i < internal->topic_count; i++) {
         if (strcmp(internal->topics[i].name, topic_name) == 0) {
 #if DDS_ENABLED
+            // 删除DDS实体
             if (internal->topics[i].writer) {
                 dds_delete(internal->topics[i].writer);
             }
@@ -237,7 +331,7 @@ int dds_unregister_topic(DdsManager *manager, const char *topic_name)
                 dds_delete(internal->topics[i].topic);
             }
 #endif
-            // 移动后面的元素
+            // 移动后面的元素填补空位
             for (int j = i; j < internal->topic_count - 1; j++) {
                 internal->topics[j] = internal->topics[j + 1];
             }
@@ -249,6 +343,9 @@ int dds_unregister_topic(DdsManager *manager, const char *topic_name)
     return -1;
 }
 
+/**
+ * @brief 设置数据到达回调
+ */
 void dds_on_data_available(DdsManager *manager,
                            void (*callback)(DdsManager *, const char *, const void *, size_t))
 {
@@ -257,6 +354,9 @@ void dds_on_data_available(DdsManager *manager,
     }
 }
 
+/**
+ * @brief 设置订阅者匹配回调
+ */
 void dds_on_subscriber_matched(DdsManager *manager,
                                void (*callback)(DdsManager *, const char *))
 {
@@ -265,6 +365,9 @@ void dds_on_subscriber_matched(DdsManager *manager,
     }
 }
 
+/**
+ * @brief 设置状态变化回调
+ */
 void dds_on_state_changed(DdsManager *manager,
                           void (*callback)(DdsManager *, DdsState))
 {
@@ -273,6 +376,13 @@ void dds_on_state_changed(DdsManager *manager,
     }
 }
 
+/**
+ * @brief 关闭DDS管理器
+ * 
+ * 释放所有DDS资源。
+ * 
+ * @param manager DDS管理器指针
+ */
 void dds_close(DdsManager *manager)
 {
     if (!manager || !manager->is_initialized) return;
@@ -280,6 +390,7 @@ void dds_close(DdsManager *manager)
 #if DDS_ENABLED
     DdsInternal *internal = (DdsInternal *)manager->participant;
     if (internal) {
+        // 删除参与者（会级联删除所有子实体）
         if (internal->participant > 0) {
             dds_delete(internal->participant);
         }
@@ -293,11 +404,21 @@ void dds_close(DdsManager *manager)
     log_info("DDS closed");
 }
 
+/**
+ * @brief 发布数据到指定话题
+ * 
+ * @param manager DDS管理器指针
+ * @param topic_name 话题名称
+ * @param data 数据内容
+ * @param len 数据长度
+ * @return 0成功，-1失败
+ */
 int dds_publish(DdsManager *manager, const char *topic_name,
                 const void *data, size_t len)
 {
     if (!manager || !topic_name || !data) return -1;
     
+    // 检查初始化状态
     if (!manager->is_initialized || manager->state != DDS_STATE_ENABLED) {
         log_warn("DDS not enabled");
         return -1;
@@ -312,6 +433,7 @@ int dds_publish(DdsManager *manager, const char *topic_name,
         return -1;
     }
     
+    // 延迟创建写入器
     if (!info->writer) {
         info->writer = dds_create_writer(internal->publisher, info->topic, NULL, NULL);
         if (info->writer < 0) {
@@ -320,13 +442,13 @@ int dds_publish(DdsManager *manager, const char *topic_name,
         }
     }
     
-    /* 封装数据到结构体 */
+    // 封装数据到IDL结构体
     Gateway_DataType msg;
     memset(&msg, 0, sizeof(msg));
     msg.length = (len > MAX_DATA_LEN) ? MAX_DATA_LEN : (uint32_t)len; 
     memcpy(msg.data, data, msg.length);
     
-    /* 发送结构体 */
+    // 发送数据
     int ret = dds_write(info->writer, &msg);
     if (ret != DDS_RETCODE_OK) {
         log_error("Failed to write to topic: %s", topic_name);
@@ -336,13 +458,20 @@ int dds_publish(DdsManager *manager, const char *topic_name,
     log_debug("DDS published to %s: %zu bytes", topic_name, len);
     return 0;
 #else
+    // DDS未启用时的桩函数
     log_debug("DDS publish (stub): topic=%s, len=%zu", topic_name, len);
     return 0;
 #endif
 }
 
 #if DDS_ENABLED
-/* 根据 reader 查找话题名 */
+/**
+ * @brief 根据读取器查找话题名称
+ * 
+ * @param manager DDS管理器指针
+ * @param reader 读取器实体
+ * @return 话题名称
+ */
 static const char* find_topic_name_by_reader(DdsManager *manager, dds_entity_t reader)
 {
     DdsInternal *internal = (DdsInternal *)manager->participant;
@@ -355,7 +484,14 @@ static const char* find_topic_name_by_reader(DdsManager *manager, dds_entity_t r
     return "unknown";
 }
 
-/* 数据到达回调 - DDS 内部线程调用 */
+/**
+ * @brief 数据到达回调（DDS内部线程调用）
+ * 
+ * 当读取器收到数据时被DDS线程调用。
+ * 
+ * @param reader 读取器实体
+ * @param arg 用户参数（DDS管理器指针）
+ */
 static void on_dds_data_available(dds_entity_t reader, void *arg)
 {
     DdsManager *manager = (DdsManager *)arg;
@@ -363,13 +499,14 @@ static void on_dds_data_available(dds_entity_t reader, void *arg)
     void *samples[1] = { &msg };
     dds_sample_info_t infos[1];
     
+    // 取出数据样本
     int n = dds_take(reader, samples, infos, 1, 1);
     if (n > 0 && infos[0].valid_data) {
         const char *topic_name = find_topic_name_by_reader(manager, reader);
         
         log_debug("DDS received from %s: %u bytes", topic_name, msg.length);
         
-        /* 调用用户回调 */
+        // 调用用户注册的回调函数
         if (manager->on_data_available) {
             manager->on_data_available(manager, topic_name, msg.data, msg.length);
         }
@@ -377,8 +514,15 @@ static void on_dds_data_available(dds_entity_t reader, void *arg)
 }
 #endif
 
-/* ========== 修改 dds_subscribe ========== */
-
+/**
+ * @brief 订阅话题
+ * 
+ * 创建读取器并设置数据到达回调。
+ * 
+ * @param manager DDS管理器指针
+ * @param topic_name 话题名称
+ * @return 0成功，-1失败
+ */
 int dds_subscribe(DdsManager *manager, const char *topic_name)
 {
     if (!manager || !topic_name) return -1;
@@ -392,12 +536,13 @@ int dds_subscribe(DdsManager *manager, const char *topic_name)
         return -1;
     }
     
+    // 延迟创建读取器
     if (!info->reader) {
-        /* 创建 listener，设置数据到达回调 */
+        // 创建监听器并设置数据到达回调
         dds_listener_t *listener = dds_create_listener(manager);
         dds_lset_data_available(listener, on_dds_data_available);
         
-        /* 创建 reader，绑定 listener */
+        // 创建读取器，绑定监听器
         info->reader = dds_create_reader(internal->subscriber, info->topic, NULL, listener);
         
         if (info->reader < 0) {
@@ -406,7 +551,7 @@ int dds_subscribe(DdsManager *manager, const char *topic_name)
             return -1;
         }
         
-        /* listener 被 reader 接管，不需要手动删除 */
+        // 监听器被读取器接管，不需要手动删除
         log_debug("DDS reader created with listener for: %s", topic_name);
     }
 #endif
@@ -415,11 +560,23 @@ int dds_subscribe(DdsManager *manager, const char *topic_name)
     return 0;
 }
 
+/**
+ * @brief 获取当前DDS状态
+ * 
+ * @param manager DDS管理器指针
+ * @return 状态枚举值
+ */
 DdsState dds_get_state(DdsManager *manager)
 {
     return manager ? manager->state : DDS_STATE_DISABLED;
 }
 
+/**
+ * @brief 检查DDS是否已启用
+ * 
+ * @param manager DDS管理器指针
+ * @return 1已启用，0未启用
+ */
 int dds_is_enabled(DdsManager *manager)
 {
     return manager && manager->is_initialized && manager->state == DDS_STATE_ENABLED;
@@ -427,6 +584,11 @@ int dds_is_enabled(DdsManager *manager)
 
 /**
  * @brief 注册默认话题（发布和订阅）
+ * 
+ * 根据配置注册默认的发布和订阅话题。
+ * 
+ * @param manager DDS管理器指针
+ * @return 0成功，-1失败
  */
 int dds_register_default_topics(DdsManager *manager)
 {
@@ -434,13 +596,13 @@ int dds_register_default_topics(DdsManager *manager)
     
     DdsConfig *cfg = &manager->config;
     
-    /* 注册发布话题 */
+    // 注册发布话题
     if (cfg->default_publish_topic[0]) {
         DdsTopic topic = {0};
         strncpy(topic.name, cfg->default_publish_topic, sizeof(topic.name) - 1);
         strncpy(topic.type_name, cfg->default_publish_type[0] ? 
                 cfg->default_publish_type : "GatewayData", sizeof(topic.type_name) - 1);
-        topic.qos = dds_qos_reliable();  /* 使用可靠QoS */
+        topic.qos = dds_qos_reliable();  // 使用可靠QoS
         
         if (dds_register_topic(manager, &topic) != 0) {
             log_warn("Failed to register DDS publish topic: %s", topic.name);
@@ -450,13 +612,13 @@ int dds_register_default_topics(DdsManager *manager)
         }
     }
     
-    /* 注册订阅话题 */
+    // 注册订阅话题
     if (cfg->default_subscribe_topic[0]) {
         DdsTopic topic = {0};
         strncpy(topic.name, cfg->default_subscribe_topic, sizeof(topic.name) - 1);
         strncpy(topic.type_name, cfg->default_subscribe_type[0] ? 
                 cfg->default_subscribe_type : "GatewayCommand", sizeof(topic.type_name) - 1);
-        topic.qos = dds_qos_reliable();  /* 使用可靠QoS */
+        topic.qos = dds_qos_reliable();  // 使用可靠QoS
         
         if (dds_register_topic(manager, &topic) != 0) {
             log_warn("Failed to register DDS subscribe topic: %s", topic.name);
@@ -471,6 +633,9 @@ int dds_register_default_topics(DdsManager *manager)
 
 /**
  * @brief 订阅默认话题
+ * 
+ * @param manager DDS管理器指针
+ * @return 0成功，-1失败
  */
 int dds_subscribe_default(DdsManager *manager)
 {
@@ -488,6 +653,11 @@ int dds_subscribe_default(DdsManager *manager)
 
 /**
  * @brief 发布到默认话题
+ * 
+ * @param manager DDS管理器指针
+ * @param data 数据内容
+ * @param len 数据长度
+ * @return 0成功，-1失败
  */
 int dds_publish_default(DdsManager *manager, const void *data, size_t len)
 {
