@@ -2593,8 +2593,197 @@ int main() {
 
 > ⚠️ 循环引用示例（两个 `shared_ptr` 互相持有对方）会导致内存泄漏，此时应将其中一个改为 `weak_ptr`。
 
-## 哈希表
-unordered_map
+## 哈希结构
+- 数组
+- set集合
+- map映射
+
+| 集合               | 底层实现 | 是否有序 | 数值是否可以重复 | 能否更改数值 | 查询效率 | 增删效率 |
+|--------------------|----------|----------|------------------|--------------|----------|----------|
+| std::set           | 红黑树   | 有序     | 否               | 否           | O(log n) | O(log n) |
+| std::multiset      | 红黑树   | 有序     | 是               | 否           | O(log n) | O(log n) |
+| std::unordered_set | 哈希表   | 无序     | 否               | 否           | O(1)     | O(1)     |
+
+| 映射               | 底层实现 | 是否有序   | 数值是否可以重复 | 能否更改数值 | 查询效率 | 增删效率 |
+|--------------------|----------|------------|------------------|--------------|----------|----------|
+| std::map           | 红黑树   | key有序    | key不可重复      | key不可修改  | O(log n) | O(log n) |
+| std::multimap      | 红黑树   | key有序    | key可重复        | key不可修改  | O(log n) | O(log n) |
+| std::unordered_map | 哈希表   | key无序    | key不可重复      | key不可修改  | O(1)     | O(1)     |
+
+### set集合
+#### std::set
+1. 定义
+- 存储**唯一元素**
+- 元素**自动排序**（默认升序）
+- 不允许重复
+- 不能直接修改元素，默认先删除再插入（会破坏有序结构）
+
+
+3. 常用操作
+```cpp
+#include <set>
+using namespace std;
+//定义
+set<int> s;
+
+// 初始化方式
+//对于字符串的排序，默认按字典序排序，即首个不同的字符决定大小关系
+set<std::string> names = {"Alice", "Bob", "Charlie"};
+
+//1.插入 insert
+//插入后自动排序：`2,5`
+s.insert(5);
+s.insert(2);
+s.insert(5);   // 重复无效
+
+//2.遍历
+// for循环输出所有值
+//结果：Alice Bob Charlie
+for (auto x : names) {
+    cout << x << " ";
+}
+// 迭代器遍历：set<int>::iterator
+for (set<int>::iterator it = s.begin(); it != s.end(); ++it) {
+    cout << *it << " ";
+}
+
+//3.查找 find
+auto it = s.find(2);
+if (it != s.end()) {
+    cout << "找到：" << *it << endl;
+}
+
+//4. 判断存在 count
+// count(x) 返回等于 x 的元素个数
+//由于set中元素唯一，所以count只能是0（不存在）或1（存在）
+if (s.count(3)) {
+    // 存在
+}
+
+//5. 删除 erase
+s.erase(2);        // 按值删除，不存在也不报错
+s.erase(s.find(5));// 按迭代器删除，必须保证元素存在，否则迭代器会失效导致报错
+s.erase(s.begin(), s.end()); // 迭代器区间删除，等价于clear()
+s.erase(s.find(5), s.end()); // 删除>=5的元素
+
+//6.大小与清空 size, empty, clear
+s.size();// 元素个数
+s.empty();// 是否为空
+s.clear();// 清空集合
+
+//7.lower_bound / upper_bound（有序集合特有）
+// >= 3 的第一个元素
+auto it = s.lower_bound(3);
+s.erase(it,s.end()) // 删除 >= 3 的元素;
+// > 3 的第一个元素
+auto it = s.upper_bound(3);
+s.erase(it,s.end()) // 删除 > 3 的元素;
+```
+4. 特点总结
+- 元素**唯一、有序**
+- 插入/删除/查找 O(log n)
+- 不能修改元素，只能删了重插
+- 适合：去重、排序、快速判存在
+
+#### std::multiset
+- key **可以重复**，和set的区别就是允许重复元素
+- 仍然有序
+```cpp
+#include <multiset>
+std::multiset<int> ms = {3, 1, 4, 1, 5};
+// 插入重复值有效
+ms.insert(1); // 现在有三个 1
+
+// multiset 和 set 唯一区别：允许元素重复，其他用法基本一致
+
+// 查找所有等于 1 的元素
+// equal_range(1) 返回一对迭代器，表示值为 1 的区间 [起始, 结束)
+// range.first  → 第一个等于 1 的元素迭代器
+// range.second → 第一个**大于 1** 的元素迭代器
+// 例子：multiset 里是 {1,1,1,2,3}
+// equal_range(1) 得到区间：从第1个1 → 到2的位置（不包含2）
+auto range = ms.equal_range(1);
+// 遍历这个区间，输出所有等于 1 的元素
+for (auto it = range.first; it != range.second; ++it) {
+    std::cout << *it << " ";   // 输出：1 1 1
+}
+
+// count 可大于 1
+std::cout << "Count of 1: " << ms.count(1); // 3
+
+// erase(1) 会删除所有 1！
+// 若只想删一个：
+auto it = ms.find(1);
+if (it != ms.end()) ms.erase(it);
+```
+
+#### std::unordered_set
+
+
+
+### map映射
+#### std::map
+1. 定义
+- 存储 **key-value 键值对**
+- **key 唯一、不可重复**
+- 按 **key 自动排序**
+- 通过key快速找value
+
+map 内部每个元素是：
+```cpp
+pair<const Key, T>
+```
+- `pair.first` → key
+- `pair.second` → value
+因此可以用迭代器访问
+```cpp
+#include <map>
+// 定义,map<key类型, value类型> 变量名;
+map<string, int> age; // key=string，value=int
+
+//插入，两种方式[] / insert
+//key 已存在时，`[]` 会覆盖value
+// insert不会覆盖，会忽略
+age["张三"] = 18;
+age.insert({"李四", 20});
+age.insert(make_pair("王五", 22));
+
+//访问
+//若key不存在，[]会自动插入一个默认value如0
+//不想插入就用 find。
+cout << age["张三"];
+
+//查找key是否存在，返回迭代器
+auto it = age.find("张三");
+if (it != age.end()) {
+    cout << it->first << " " << it->second << endl;
+}
+
+//遍历
+//本质上是迭代器遍历
+for (auto& p : age) {
+    cout << p.first << ": " << p.second << endl;
+}
+
+//删除
+age.erase("张三");       // 按key删
+age.erase(age.begin());  // 按迭代器删
+age.clear();
+
+//长度和是否为空
+age.size();
+age.empty();
+age.count(key); // 0或1
+```
+5. 特点总结
+- key 唯一、有序
+- 查找/插入/删除 O(log n)
+- key 不能修改，value 可以改
+- 适合：字典、映射、索引表
+
+
+#### multimap
+#### unordered_map
 
 ## 容器
 ```
