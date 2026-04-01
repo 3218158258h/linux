@@ -172,3 +172,107 @@ int set_nonblocking(int fd) {
    - 注意：设置非阻塞后，`read()`/`write()` 可能返回 `-1` 且 `errno=EAGAIN` 或 `EWOULDBLOCK`，表示“当前无数据/缓冲区满，需稍后重试”。
 
 
+#####################################################################
+
+**示例**
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <sys/epoll.h>
+#include <termios.h>
+
+#define MAX_EVENTS  10
+#define UART_DEV    "/dev/ttyS0"   // 你的串口设备
+
+// 串口初始化（嵌入式常用）
+static int uart_init(const char *dev)
+{
+    int fd = open(dev, O_RDWR | O_NOCTTY | O_NONBLOCK);
+    if (fd < 0) {
+        perror("open uart");
+        return -1;
+    }
+
+    struct termios newtio;
+    memset(&newtio, 0, sizeof(newtio));
+
+    newtio.c_cflag = B115200 | CS8 | CLOCAL | CREAD;
+    newtio.c_iflag = IGNPAR;
+    newtio.c_oflag = 0;
+    newtio.c_lflag = 0;
+    newtio.c_cc[VTIME] = 0;
+    newtio.c_cc[VMIN]  = 0;
+
+    tcflush(fd, TCIFLUSH);
+    tcsetattr(fd, TCSANOW, &newtio);
+
+    return fd;
+}
+
+// 设置fd为非阻塞（嵌入式必备）
+static void set_nonblock(int fd)
+{
+    int flags = fcntl(fd, F_GETFL, 0);
+    fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+}
+
+int main(void)
+{
+    int epfd;
+    int uart_fd;
+    struct epoll_event ev, events[MAX_EVENTS];
+    int nfds, i;
+
+    // 1. 初始化串口
+    uart_fd = uart_init(UART_DEV);
+    if (uart_fd < 0)
+        return -1;
+
+    // 2. 创建epoll实例
+    epfd = epoll_create1(0);
+    if (epfd < 0) {
+        perror("epoll_create1");
+        close(uart_fd);
+        return -1;
+    }
+
+    // 3. 添加串口到epoll监听
+    ev.events  = EPOLLIN;       // 监听可读事件
+    ev.data.fd = uart_fd;
+
+    if (epoll_ctl(epfd, EPOLL_CTL_ADD, uart_fd, &ev) < 0) {
+        perror("epoll_ctl");
+        close(uart_fd);
+        close(epfd);
+        return -1;
+    }
+
+    printf("epoll 监听串口 %s 成功，等待数据...\n", UART_DEV);
+
+    // 4. 循环等待事件
+    while (1) {
+        // 阻塞等待事件，-1 无限等待
+        nfds = epoll_wait(epfd, events, MAX_EVENTS, -1);
+
+        for (i = 0; i < nfds; i++) {
+            // 串口有数据可读
+            if (events[i].events & EPOLLIN) {
+                char buf[128];
+                int r = read(events[i].data.fd, buf, sizeof(buf)-1);
+                if (r > 0) {
+                    buf[r] = '\0';
+                    printf("收到串口数据: %s\n", buf);
+                }
+            }
+        }
+    }
+
+    close(uart_fd);
+    close(epfd);
+    return 0;
+}
+```
