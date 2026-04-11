@@ -582,7 +582,7 @@ constexpr int f = factorial(5); // 编译期计算出 120
 ### 关键字static
 - 定义在函数内部则作用域在内部，每次调用不会清零
 - 作用域在cpp文件则作用域限定在本文件
-- 定义在类内则作用域为类，必须在类外初始化，每个对象对于同一个staic共享数据，不同static数据不共享
+- 定义在类内则作用域为类，必须在类外初始化(static const和inline static除外)，每个对象对于同一个staic共享数据，不同static数据不共享
 - 所有对象的同一静态成员变量共享数据，不同静态成员变量不共享数据
 - 类中定义的静态成员变量在编译阶段分配内存;必须类外初始化，私有数据不影响初始化，但是影响读写
 - 所有对象共享同一静态成员函数
@@ -817,7 +817,7 @@ int main() {
    ```
 4. **virtual 不能修饰的内容**：
    - 全局函数、静态成员函数（static）；
-   - 构造函数（构造函数执行时，对象的多态性还未建立，无法虚调用）；
+   - 构造函数（构造函数执行时，对象的多态性(虚表)还未建立，无法虚调用）；
    - 内联函数（inline）：加 `virtual` 后，inline 会失效（除非通过对象直接调用，而非指针/引用）
 
 5. **虚析构函数**
@@ -850,79 +850,119 @@ int main() {
    - 压栈、跳转、返回、出栈
    这些都要消耗 CPU。
    `inline` 可以`建议`编译器：**直接把函数代码复制到调用处**，不做函数调用，适合`高频`调用的`小`函数
-
 2. **解决头文件重复定义问题**
    在 C++ 里，如果**普通函数写在头文件**，被多个 `.cpp` 包含，会报 **multiple definition** 错误。
    加 `inline` 后，编译器允许它在多个编译单元存在，不会重复定义。
 
-
 #### 函数调用的方式
 - 常规调用
 - 内联调用（插入到调用处代码中）
-
 **常规函数调用**
    - 压栈、跳转、返回、出栈
-
 当程序执行到一个普通函数调用时，CPU 需要完成一系列操作，主要包括：
-
 1. **保存当前上下文（现场）**  
    - 将当前函数的寄存器状态（如通用寄存器、程序计数器 PC 等）压入栈中。
    - 特别是返回地址（即调用结束后应继续执行的位置）会被压栈。
-
 2. **参数传递**  
    - 参数通常通过寄存器或栈传递（取决于调用约定，如 `cdecl`、`stdcall` 等）。
-
 3. **跳转到目标函数地址**  
    - CPU 的程序计数器（PC）被设置为被调函数的入口地址。
-
 4. **创建新的栈帧（Stack Frame）**  
    - 被调函数在栈上分配空间用于局部变量、保存调用者栈帧指针等。
-
 5. **执行函数体**
-
 6. **销毁栈帧并恢复现场**  
    - 函数返回前，清理局部变量，恢复调用者的栈帧。
-
 7. **跳回调用点继续执行**
-
-
 
 **内联展开的优势**
 - **消除函数调用开销**：无需压栈、跳转、建栈帧、返回等操作。
 - **提升指令局部性**：有利于 CPU 指令缓存（I-Cache）命中。
 - **便于后续优化**：编译器可以对展开后的代码进行常量传播、死代码消除等优化。
-
 - 代价：
 - **代码膨胀**：每次调用都插入一份函数体，可能导致可执行文件变大。
 - **缓存压力增加**：过大的代码体积可能降低 CPU 指令缓存效率，反而降低性能
 
-
-
 #### inline 的关键点
 1. **它只是“建议”，不是命令**
    函数太长、有循环/递归，编译器会**忽略 inline**，还是当成普通函数。
-
 2. **适合极短的函数**
    - getter/setter
    - 简单算术、小逻辑
    不适合：复杂逻辑、循环、递归、大函数。
-
 3. **类内定义的函数默认 inline**
-
 4. **现代编译器很智能**
    即使你不写 `inline`，编译器在开启优化（`O2`）时，也会自动把小函数 inline。
-
 5. **什么时候该用 inline？**
 - 函数**很短**，几行代码
 - 被**高频调用**（循环里、热点路径）
 - 函数要放在**头文件**里被多处包含
-
 6. **什么时候不要用？**
 - 函数大、有循环、递归
 - 很少调用的函数
 - 虚函数（一般无法 inline,否则inline会失败）
 
+#### inline函数和宏定义的区别
+- 前者是真正的函数，有类型检查、语法检查、作用域检查，错误是编译器会提示
+- 前者易于调试，可以单步调试，查看调用栈等
+- 前者调用优先级正常，例如int square(a){return a*a;},square(1+1)得到2*2=4
+- 后者是文本替换，编译器无法检查，容易出错（如参数副作用、优先级问题等）
+- 后者直接替换文本，无法单步调试，查看调用栈
+- 后者传入square(1+1)得到1+1*1+1=3
+---
+### 关键字override和final
+**override（覆盖、重写）**
+- 明确表示：**这个虚函数是要重写（覆盖）父类的虚函数**
+- 编译器会**强制检查**：
+  父类有没有同名、同参数、同const、同返回值的虚函数
+  不匹配就直接报错，防止手滑写错
 
+**示例**
+```cpp
+class Base {
+public:
+    virtual void show() { ... }
+};
+
+class Derived : public Base {
+public:
+    void show() override { ... }  // 明确重写
+};
+```
+
+**不加 override 会出的坑**
+你手滑写成：
+```cpp
+void sho() { ... }  // 少个w
+```
+编译器不报错，以为是新函数，**BUG 隐藏很深**。
+加了 `override` 就会直接编译报错，一眼发现。
+
+---
+
+**final（最终、禁止）**
+1. **修饰类：禁止被继承**
+```cpp
+class MyClass final { ... };
+// 报错：无法继承final类
+class Son : public MyClass { ... };
+```
+2. **修饰虚函数：禁止子类再重写**
+```cpp
+class Base {
+public:
+    virtual void func() final { ... }
+};
+
+class Derived : public Base {
+public:
+    void func() { ... }  // 报错：final函数不能重写
+};
+```
+**一起用（常见写法）**
+既想重写，又想禁止子类再改：
+```cpp
+void show() override final { ... }
+```
 ---
 ### string类型
 在 C++ 中，`std::string` 是标准库提供的字符串类型，用于方便地处理文本数据。它封装了字符串的存储和操作逻辑，相比 C 语言中的字符数组（`char[]`）更加安全、易用。
@@ -1611,6 +1651,283 @@ void print(double x, int y) {  // 参数顺序不同，构成重载
    ```
 
 ---
+### 类型转换
+
+C++ 完全抛弃了 C 语言的 `(类型)值` 粗暴转换，专门设计了**4种安全的cast转换**，**用途完全分开**
+
+
+1. **静态转换：`static_cast`**  
+   最常用、最安全，用于**兼容类型**转换（int ↔ double、基类 ↔ 子类 安全转换）
+2. **常量转换：`const_cast`**  
+   **唯一作用：增加/去掉 const 属性**
+3. **重解释转换：`reinterpret_cast`**  
+   最危险，直接**把内存当成另一种类型解读**（指针转整数、不同类型指针互转）
+4. **动态转换：`dynamic_cast`**  
+   **多态类转换**，运行时检查类型安全（基类指针 → 子类指针）
+
+1. static_cast（最常用）
+**用途**
+- 基本数据类型转换（int ↔ double）
+- 有继承关系的**安全指针转换**（向上转型安全），如派生类指针转基类指针，安全
+- 空指针转换，void* 转int*等
+- 继承关系中向下类型转换，如基类指针转派生类指针，不安全，运行时不检查
+
+**示例**
+```cpp
+double pi = 3.14;
+int a = static_cast<int>(pi);  // double → int
+
+// 基类 ↔ 子类（编译期检查）
+Base* base = new Derived();
+Derived* der = static_cast<Derived*>(base);
+```
+**特点**
+- **编译期检查**，不安全会报错
+- 没有运行时开销
+- **平时优先用它**
+
+2. const_cast（专门改const）
+**用途**
+**只有一个功能：添加或移除const/volatile限定**
+
+**示例**
+```cpp
+const int c = 10;
+int* p = const_cast<int*>(&c); // 去掉const
+```
+**注意**
+- 不能改变类型，**只能改const/volatile属性**
+- 例如：用于适配一个形参为非const的旧API，而你又确定不会修改该数据
+
+3. reinterpret_cast（最危险）
+**用途**
+- 指针 ↔ 整数
+- 无关类型指针互相转换
+- **直接重新解释二进制内存**，直接修改内存的比特位，结果及其依赖编译器和平台，极不安全
+**示例**
+```cpp
+int x = 100;
+// 把 int* 强行转成 char*
+char* p = reinterpret_cast<char*>(&x);
+```
+**特点**
+- 编译期只是“欺骗编译器”
+- **运行时可能崩溃**
+- 底层、驱动、网络编程偶尔用
+
+4. dynamic_cast（多态专用）
+**用途**
+**多态继承体系中，基类指针/引用 安全转 子类指针/引用**
+
+**特点**
+- **运行时类型检查（RTTI）**（不同于static_cast）
+- 转换失败：返回 `nullptr`（指针）/抛异常（引用）
+- **必须有多态虚函数**才能用
+
+**示例**
+```cpp
+Base* base = new Derived();
+// 安全转成子类
+Derived* der = dynamic_cast<Derived*>(base);
+
+if (der) {
+    // 转换成功
+}
+```
+**总结**
+| 转换 | 用途 | 安全性 | 检查时机 |
+|-----|------|--------|----------|
+| **static_cast** | 常规类型、继承安全转换 | 高 | 编译期 |
+| **const_cast** | 增删const/volatile | 低 | 编译期 |
+| **reinterpret_cast** | 二进制重新解释 | 极低 | 编译期 |
+| **dynamic_cast** | 多态类安全转换 | 最高 | 运行期 |
+
+---
+### auto与decltype
+**auto** 是 C++11 引入的类型推导关键字，允许编译器根据初始化表达式自动推导出变量的类型
+**核心要点：**
+*   **简化代码：** 对于类型名称很长的变量（如迭代器、函数对象），使用 `auto` 可以显著减少代码长度，提高可读性。
+*   **必须初始化：** 使用 `auto` 声明变量时，**必须**同时提供初始化表达式，因为编译器需要根据这个表达式来推断类型。例如 `auto i = 42;` 是正确的，而 `auto j;` 是错误的。
+*   **并非新类型：** `auto` 本身不是一个类型，而是一个“类型占位符”，它会被编译器替换为实际推导出的类型。
+
+**基本用法**
+```cpp
+auto x = 5;        // x 的类型被推导为 int
+auto pi = 3.14;    // pi 的类型被推导为 double
+auto name = "John"; // name 的类型被推导为 const char*
+```
+
+**与指针、引用和常量结合使用**
+`auto` 可以和 `*`, `&`, `const` 等修饰符一起使用，但推导规则需要特别注意：
+
+**普通推导：** 默认情况下，`auto` 会忽略初始化表达式的顶层 `const` 和引用 `&` 属性。
+```cpp
+    int a = 10;
+    const int b = 20;
+    int& ref_a = a;
+    auto x = a;     // x 为 int (复制 a 的值)
+    auto y = b;     // y 为 int (忽略顶层 const，复制 b 的值)，不保留const
+    auto z = ref_a; // z 为 int (先解引用 ref_a 得到值 10，然后复制给 int 类型的 z)
+```
+**引用 (`&`)：** `auto&` 会推导出一个引用类型，其类型与初始化表达式完全匹配（保留底层 const）。
+```cpp
+    int a = 10;
+    const int b = 20;
+    int& ref_a = a;
+
+    auto& r1 = a;      // r1 为 int&，引用 a
+    auto& r2 = ref_a;  // r2 为 int&，引用 a
+    // auto& r3 = b;   // 错误！b 是 const int，不能绑定到非 const 的 int&
+    const auto& r4 = b; // r4 为 const int&，正确。这是一个常见的模式，可以绑定任意类型的表达式（左值或右值）。
+```
+**指针 (`*`)：** `auto*` 明确表示要推导一个指针类型。
+```cpp
+    int n = 42;
+    int* p = &n;
+
+    auto ptr = p;  // ptr 为 int* (auto 推导为 int，所以 ptr 是 int*)
+    auto* ptr2 = p; // ptr2 为 int* (等价于上面，* 是显式声明)
+```
+**常量 (`const`)：** `const auto` 会推导出一个底层 `const` 的变量。
+```cpp
+    int a = 10;
+    auto x = a;       // x 为 int
+    const auto cx = a; // cx 为 const int
+```
+**应用场景**
+1.  **简化复杂类型声明：** 最常见的用途是在处理 STL 容器迭代器时。
+    ```cpp
+    vector<int> vec = {1, 2, 3, 4, 5};
+    // C++11 之前
+    // vector<int>::iterator it = vec.begin();
+    auto it = vec.begin(); // it 的类型被推导为 vector<int>::iterator
+    cout << *it << endl; // 输出 1
+    return 0;
+    ```
+2.  **存储复杂 lambda 表达式的类型：** Lambda 表达式的类型是匿名的，`auto` 是唯一能声明其变量的方式。
+    ```cpp
+    auto my_lambda = [](int x, int y) { return x + y; };
+    int result = my_lambda(3, 4); // result 为 7
+    ```
+
+**无法推导的场景**
+**函数参数（C++20 之前）：** 不能直接用 `auto` 作为普通函数参数的类型。
+```cpp
+    // void func(auto val); // C++20 之前错误
+```
+**数组参数：** 不能用 `auto` 直接声明数组，但在 C++14 后可以用 `auto` 声明数组的元素类型（通过聚合初始化）。
+```cpp
+    // auto arr[] = {1, 2, 3}; // 错误
+    auto arr = {1, 2, 3}; // arr 的类型被推导为 std::initializer_list<int>
+```
+---
+
+#### decltype 
+- 是C++11引入的另一个类型推导关键字，用于**查询表达式的类型**，而不是变量的类型。它会精确地返回表达式的静态类型（static type），而不像 auto 那样依赖于初始化表达式的值。这意味着 decltype 不仅能推导出类型，还能保留该类型的所有属性，包括引用 (&)、常量性 (const)、易变性 (volatile) 等。
+
+**基本语法**
+```cpp
+decltype(expression) identifier = value;
+ //或者
+typedef decltype(expression) new_type_name;
+```
+**decltype 的推导规则**
+
+- decltype 的行为比 auto 更加精确和严格，具体规则如下：
+- 如果expression是一个没有被括号包围的标识符 (identifier) 或类成员访问表达式，则decltype返回该实体的声明类型。
+```cpp
+    int x = 42;           // x 的声明类型是 int
+    int& rx = x;          // rx 的声明类型是 int&
+    const int& crx = x;   // crx 的声明类型是 const int&
+
+    decltype(x) y1 = x;   // y1 的类型是 int (与 x 的声明类型相同)
+    decltype(rx) y2 = x;  // y2 的类型是 int& (与 rx 的声明类型相同)，y2 是 x 的别名
+    decltype(crx) y3 = x; // y3 的类型是 const int& (与 crx 的声明类型相同)
+```    
+- 如果expression是一个函数调用，则decltype返回该函数的返回值类型。
+```cpp
+    int func();
+    const int& func_const_ref();
+
+    decltype(func()) a;           // a 的类型是 int (func 的返回值类型)
+    decltype(func_const_ref()) b = a; // b 的类型是 const int& (func_const_ref 的返回值类型)
+```    
+- 如果 expression 是一个**左值 (lvalue)** 表达式，但不是上述两种情况（即不是单纯的标识符或函数调用），则 decltype 返回 T&（其中 T 是表达式的类型）。**
+```cpp
+    int arr[10];
+    int n;
+    decltype(arr[5]) c = n;  // arr[5] 是一个左值表达式，其类型是 int，但由于它是左值，
+                             // decltype 返回 int&。所以 c 的类型是 int&，是 arr[5] 的别名。
+
+    int& r = n;
+    decltype(r + 0) d = n;   // r + 0 的结果是一个临时的 int 值 (右值)，其类型是 int。
+                             // 但是 r + 0 本身是一个右值表达式，不符合这条规则（这条规则只针对 lvalue）。
+                             // 实际上，r + 0 产生的是一个纯右值 (prvalue)，所以 decltype 应该返回 int。
+                             // 让我们看一个更清晰的例子：
+    int* p = &n;
+    decltype(*p) e = n;      // *p 是一个左值表达式，其类型是 int，所以 decltype 返回 int&
+                             // e 的类型是 int&，是 *p (即 n) 的别名。
+
+    // 一个典型的例子是：
+    int&& rr = static_cast(n); // rr 是一个 int&& 类型的变量，绑定到一个右值引用
+    decltype(rr) f = static_cast(n); // rr 作为一个标识符，其声明类型是 int&&。
+                                           // 符合规则 1，f 的类型是 int&&。
+```
+- 如果expression是一个**纯右值 (prvalue)** 表达式，则decltype返回T（其中 T 是表达式的类型）
+```cpp
+    decltype(5) g = 5;            // 5 是一个 int 类型的纯右值表达式，g的类型是int
+    decltype(true && false) h = false; // bool && bool 的结果是 bool 类型的纯右值表达式，h的类型是bool
+```
+- 如果expression是一个**亡值 (xvalue)** 表达式，则decltype返回T&&（其中 T 是表达式的类型）。**
+```cpp
+        int i;
+    decltype(static_cast(i)) k = i; // static_cast(i) 将 i 转换为一个 int 类型的亡值表达式，k的类型是int&&，
+                                           // k 的类型是 int&&。
+```
+- 如果expression是一个**被括号包围的表达式**，则无论该表达式是什么，它都会被视为一个左值，然后应用左值规则
+```cpp
+        int x = 10;
+    decltype((x)) y = x;  // (x) 是一个被括号包围的表达式，它是一个 lvalue。
+                          // 根据规则 3，decltype 返回 int&。所以 y 的类型是 int&，是 x 的别名。
+    decltype(x) z = x;    // x 是一个标识符，根据规则 1，decltype 返回 x 的声明类型 int。
+                          // 所以 z 的类型是 int。
+```
+
+示例对比：
+```cpp
+int i;
+int& r = i;
+// auto 的推导
+auto a1 = r;  // a1 的类型是 int (拷贝了 r 指向的值，忽略了引用)
+auto& a2 = r; // a2 的类型是 int& (明确要求引用)
+
+// decltype 的推导
+decltype(i) d1 = i; // d1 的类型是 int (i 的声明类型)
+decltype(r) d2 = i; // d2 的类型是 int& (r 的声明类型)
+// decltype(r) d3;  // 错误！d2 是 int& 类型，必须初始化
+```
+**应用场景**
+decltype 在现代 C++ 中尤其在模板元编程和编写泛型代码时非常有用。
+
+声明与某个表达式类型相同的变量：
+```cpp
+template <typename Container>
+void process(Container& c) {
+        // 想声明一个与容器 c.back() 返回值类型相同的变量
+        decltype(c.back()) value = c.back(); 
+        // 如果 back() 返回 int&，value 就是 int&；如果返回 int，value 就是 int。
+    }
+```
+在模板中实现通用的返回类型：
+```cpp
+template <typename F, typename T>
+auto call_and_store_result(F func, T arg) -> decltype(func(arg)) {
+        // 推导 func(arg) 的返回类型作为函数的返回类型
+        return func(arg);
+}
+```
+
+---
 ### 关键字operator（运算符重载）
 允许我们为`自定义类型`重新定义`运算符`（如 +、==、[]、<<）的行为，
 让运算符能像操作内置类型（int、double）一样操作自定义对象
@@ -2284,7 +2601,8 @@ int main() {
 | 有参构造函数       | 带参数，支持自定义初始化              | `Student(string n, int a, float s) { name = n; age = a; score = s; }`    |
 | 拷贝构造函数       | 参数为“同类对象的引用”，用于对象拷贝  | `Student(const Student& other) { name = other.name; age = other.age; }`  |
 | 委托构造函数       | 复用其他构造函数的逻辑（C++11 特性）  | `Student() : Student("", 0, 0.0) {}`（委托有参构造初始化）               |
-| 移动构造函数       | 参数为“同类对象的右值引用T&&”，用于资源转移，无效拷贝 | `Student(Student&& other) { name = move(other.name); age = other.age; }` |
+| 移动构造函数       | 参数为“同类对象的右值引用T&&”，用于资源转移，无效拷贝 | `Student(Student&& other) { name = move(other.name); age = other.age; }` 
+|继承构造函数|派生类继承父类的构造函数，用于初始化派生类的成员变量，如父类`只有`参构造必须手动在初始化列表调用,否则无法初始化父类成员变量| `Child() : Parent(100) { }`|
 
 
 - 若用户定义了有参构造函数，则C++会提供默认拷贝构造，但不会提供无参构造
