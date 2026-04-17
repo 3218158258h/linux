@@ -950,6 +950,9 @@ void sho() { ... }  // 少个w
 ---
 
 **final（最终、禁止）**
+- 当一个类或虚函数被`final`修饰后，编译器就可以对其进行去虚拟化，直接调用该函数，而不是动态调用，砍掉查询虚函数表的开销，提升性能。
+- 同时因为可以直接调用不用查表，因此编译器可以进行内联优化，直接插入代码，连直接调用的开销都没有了
+- 对类加final代表没有子类，所有方法都可以被编译器优化
 1. **修饰类：禁止被继承**
 ```cpp
 class MyClass final { ... };
@@ -1520,7 +1523,7 @@ const int &r =a;
 ### this指针
 - 核心作用是：指向当前调用成员函数的那个对象
 **隐含存在**
-- 所有非静态成员函数内部都隐式包含`this`指针（静态成员函数没有 this，因为不依赖对象）
+- 所有非静态`成员函数`内部都隐式包含`this`指针（静态成员函数没有 this，因为不依赖对象）,因此this指针属于普通函数参数，存储在栈中，函数被调用时，this指针会自动传入，指向调用对象，函数结束时，this指针会自动销毁
 **指针本质**
 this 的类型是:类名* const,比如 Person* const,指向的对象地址不能改
 **作用**
@@ -2638,6 +2641,7 @@ int main() {
 - 不仅复制指针变量本身，还会复制指针指向的资源（如重新申请一块内存，将原资源的值拷贝到新内存）。
 - 拷贝后，原对象和新对象的指针成员指向不同的内存块，但内容相同。
 - 必须手动管理堆资源
+- STL容器采用值语义存储，任何插入都会触发拷贝，因此必须实现深拷贝，否则存入的指针会指向同一内存，导致错误
 
 
 | 对比项       | 浅拷贝（默认拷贝构造）                | 深拷贝（手动实现）                  |
@@ -2810,6 +2814,77 @@ int main() {
 }
 ```
 
+---
+### 单例模式
+- **单例模式**:一个类在整个程序运行期间，只能创建唯一一个对象，永远不会创建第二个。
+- 分为三种，一种是程序开始时创建，如果没使用可能造成资源浪费**饿汉式**
+- 一种是调用时再创建，可能导致线程安全（需要加锁）**懒汉式**
+- 一种的C++11 局部静态变量，推荐，代码简洁，自动线程安全，自动销毁
+
+**使用场景**
+1. 配置管理类
+整个项目的配置文件只加载一次，全局唯一。
+2. 日志工具类
+整个系统只有一个日志对象，避免日志混乱。
+3. 数据库连接池
+连接池只能有一个，否则会创建大量重复连接导致崩溃。
+4. 缓存系统
+Redis 客户端、本地缓存管理器，全局一个就够。
+5. 线程池
+线程池必须单例，否则会创建无数线程。
+6. 计数器 / 序列号生成器
+比如订单号、用户 ID 生成器，必须全局唯一，不能重复。
+
+**饿汉式**
+- 实现简单，线程安全,可能造成资源浪费(实例未被使用时也占用内存)
+```cpp
+class Singleton {
+private:
+    static Singleton* instance;
+    Singleton() {}
+public:
+    static Singleton* getInstance() {
+        return instance;
+    }
+};
+// 程序启动时初始化
+Singleton* Singleton::instance = new Singleton();
+```
+
+**懒汉式**
+- 线程不安全,需要加锁，节约资源
+```cpp
+class Singleton {
+private:
+    static Singleton* instance;
+    static std::mutex mtx;
+    Singleton() {}
+public:
+    static Singleton* getInstance() {
+        if(instance == nullptr) {
+            std::lock_guard<std::mutex> lock(mtx);
+            if(instance == nullptr) {
+                instance = new Singleton();
+            }
+        }
+        return instance;
+    }
+};
+```
+
+**C++11 局部静态变量**
+- 线程安全,自动销毁，推荐
+```cpp
+class Singleton {
+private:
+    Singleton() {}
+public:
+    static Singleton& getInstance() {
+        static Singleton instance;
+        return instance;
+    }
+};
+```
 ---
 ## 模板
 
