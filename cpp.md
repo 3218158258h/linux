@@ -3298,8 +3298,6 @@ if (it != ms.end()) ms.erase(it);
 
 #### std::unordered_set
 
-
-
 ### map映射
 #### std::map
 1. 定义
@@ -3361,8 +3359,120 @@ age.count(key); // 0或1
 - 适合：字典、映射、索引表
 
 
-#### multimap
-#### unordered_map
+#### std::multimap
+
+#### std::unordered_map
+`std::unordered_map` 是 **C++ 标准库** 中的**无序关联容器**，核心作用是**存储键值对（key-value）**，通过**唯一的 key 快速查找对应的 value**，**不保证元素顺序**，底层基于**哈希表**实现。定义在`#include <unordered_map> `
+
+它是日常开发中**高频使用**的容器，优势是**查找、插入、删除操作平均时间复杂度 O(1)**，远快于有序的 `map`（底层红黑树，O(logn)）。
+
+**核心特点**
+1. **键唯一**：同一个 key 只能出现一次，重复插入会覆盖旧值
+2. **无序存储**：元素顺序和插入顺序无关，由哈希函数决定存储位置
+3. **高效访问**：平均情况下，查找/插入/删除速度极快
+4. **键不可修改**：key 是只读的，只能修改对应的 value
+5. **底层实现**：哈希表（哈希桶 + 链表/红黑树解决哈希冲突）
+
+
+**常用操作**
+```cpp
+    // 1. 创建 unordered_map：key 是 string，value 是 int
+    unordered_map<string, int> score;
+
+    // 2. 插入元素（4种方式）
+    score["Alice"] = 95;                // 最简单：直接赋值
+    score.insert({"Bob", 88});          // insert + 初始化列表
+    score.insert(make_pair("Charlie", 92)); // insert + make_pair
+    score.emplace("David", 79);          // emplace：效率最高（直接构造）
+
+    // 3. 访问元素
+    cout << "Alice 的分数：" << score["Alice"] << endl;  // 输出 95
+    // 安全访问：key 不存在时不会插入默认值
+    auto it = score.find("Bob");
+    if (it != score.end()) {
+        cout << "Bob 的分数：" << it->second << endl;  // 输出 88
+    }
+
+    // 4. 遍历元素（范围for循环，最常用）
+    cout << "\n所有成绩：" << endl;
+    for (auto& pair : score) {
+        cout << pair.first << "：" << pair.second << endl;
+    }
+
+    // 5. 修改元素
+    score["Alice"] = 98;  // 直接覆盖
+
+    // 6. 删除元素
+    score.erase("Charlie");  // 按 key 删除
+    // score.erase(it);     // 按迭代器删除
+
+    // 7. 常用成员函数
+    cout << "\n元素个数：" << score.size() << endl;    // 输出 3
+    cout << "是否为空：" << score.empty() << endl;    // 输出 0（false）
+    score.clear();  // 清空所有元素
+
+```
+
+##### 核心成员函数速查
+| 函数 | 作用 |
+|------|------|
+| `map[key]` | 访问/插入元素（key不存在会插入默认值） |
+| `insert({key, val})` | 插入键值对（key已存在则不操作） |
+| `emplace(key, val)` | 高效插入（直接构造，推荐） |
+| `find(key)` | 查找 key，返回迭代器（找不到返回 end()） |
+| `count(key)` | 统计 key 数量（0或1，用于判断key是否存在） |
+| `erase(key)` / `erase(it)` | 删除指定 key/迭代器的元素 |
+| `size()` | 获取元素个数 |
+| `empty()` | 判断是否为空 |
+| `clear()` | 清空所有元素 |
+| `begin()`/`end()` | 获取首尾迭代器 |
+
+
+**map[] 操作的坑**
+`map[key]` 如果 **key 不存在**，会**自动插入 key，并给 value 赋默认值**（int=0，string=空）。
+✅ 推荐：**判断 key 是否存在用 `find()` 或 `count()`**
+```cpp
+// 错误：会插入不存在的 key
+if (score["Tom"] == 100) { ... } 
+
+// 正确：安全判断
+if (score.find("Tom") != score.end()) { ... }
+// 或
+if (score.count("Tom")) { ... }
+```
+
+##### 支持的 key 类型
+默认支持：`int`/`string`/`char*`/`double` 等基础类型以及指针类型，因为指针本质是地址
+**自定义类型**作为 key 时，**必须手动提供哈希函数**和==运算符重载（否则编译报错）。
+```cpp
+// 1. 自定义结构体/类（作为 unordered_map 的 key）
+struct Student {
+    int id;         // 学号
+    std::string name; // 姓名
+
+    // 必须重载 == 运算符：用于哈希冲突时判断两个 key 是否相等
+    bool operator==(const Student& other) const {
+        return id == other.id && name == other.name;
+    }
+};
+
+// 2. 自定义哈希函数：继承 std::hash 模板
+struct StudentHash {
+    size_t operator()(const Student& s) const {
+        // 核心：组合多个成员变量的哈希值（推荐用异或 ^ 组合）
+        // std::hash 是标准库提供的基础类型哈希函数
+        size_t hashId = std::hash<int>{}(s.id);
+        size_t hashName = std::hash<std::string>{}(s.name);
+        
+        // 组合哈希（简单写法：异或；更优：移位+异或避免冲突）
+        return hashId ^ (hashName << 1);
+    }
+};
+
+// 3. 声明 unordered_map：模板参数依次是 <key类型, value类型, 哈希函数>
+    std::unordered_map<Student, int, StudentHash> studentScore;
+```
+
 ---
 ## 容器
 ```
