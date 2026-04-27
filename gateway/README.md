@@ -1,73 +1,188 @@
+# gateway
 
-## 项目概述
-- 基于IMX6ULL平台的智能网关
-- 当前仅支持蓝牙设备，后续将接入LoRa设备
-- 待开发功能：OTA升级、守护进程
+智能网关服务，负责：
+- 从串口设备接收二进制数据并转发到云端（MQTT / DDS）
+- 接收云端下发指令并转发到设备
+- 本地持久化消息到 SQLite
 
-**编译运行**
+---
+
+## 1. 构建
+
+仓库根目录：`<project-root>`
+
+### 1.1 标准构建（默认启用 DDS）
 ```bash
-sudo socat -d -d pty,link=/dev/ttyUSB0,raw,echo=0,mode=666 pty,link=/dev/ttyUSB1,raw,echo=0,mode=666 # 创建虚拟串口
-
-cat /dev/ttyUSB0 | hexdump -C # 监听
-
-echo -ne '\xF1\xDD\x04\x00\x01\x01\x02' > /dev/ttyUSB1 # 发送数据
+cd <project-root>
+make
 ```
+
+如 Cyclone DDS 安装路径不是默认值，可显式指定：
 ```bash
-#修改app_ota.c配置文件路径
-# 修改Makefile
-make USE_DDS=1
-./gateway app
+cd <project-root>
+make DDS_HOME=/path/to/cyclonedds/install
 ```
 
-### 蓝牙设备
-- 基于JDY-24M超级蓝牙模块
-   - 网关端：接入1个蓝牙模块
-   - 下位机端：接入1个蓝牙模块（可通过PC机串口模拟）
-- 网关启动后通过AT指令对蓝牙模块进行初始化配置
+---
 
-**消息格式**：
-   - 上位机发送JSON格式：
-   ```json
-   {
-     "connection_type": 1,
-     "id": "AABBCCDD",
-     "data": "112233445566"
-   }
-   ```
-### Message模块
-- 处理消息格式转换（JSON与二进制）
-- 消息结构：连接类型、设备ID、数据
-  - 从二进制数据初始化消息
-  - 从JSON字符串初始化消息
-  - 消息序列化为二进制/JSON
+## 2. 启动
 
-### 设备模块
-- 抽象设备通用操作，支持串口等设备类型
-  - 后台线程负责数据读取与缓存
-  - 虚函数表支持设备类型扩展
-  - 读写缓冲区分离，通过回调处理数据
-- 初始化、启动/停止、读写数据、注册回调、关闭设备
-
+```bash
+cd <project-root>
+./build/bin/gateway app
 ```
+
+---
+
+## 3. 配置说明
+
+顶层清单：`<project-root>/gateway.ini`
+
+实际配置拆分到：
+- `config/transport.ini`
+- `config/transport_physical.ini`
+- `config/protocols.ini`
+- `gateway.ini`
+
+### 3.1 传输配置
+在 `config/transport.ini` 中设置 `[transport]` / `[mqtt]` / `[dds]`
+在 `config/transport_physical.ini` 中设置串口/CAN/SPI/I2C 等物理接口参数
+
+### 3.2 运行时与路由
+- `gateway.ini` 的 `[runtime]`：线程池等运行时参数
+- `gateway.ini` 的 `[router]`：路由缓冲区参数
+
+### 3.3 设备与蓝牙
+- `gateway.ini` 的 `[device]`：串口设备列表与设备缓冲区
+- `gateway.ini` 的 `[bluetooth]`：蓝牙模块运行参数（m_addr / net_id / baud_rate）
+
+### 3.4 持久化
+`gateway.ini` 的 `[persistence]` 包含 SQLite 数据库与队列参数
+
+> 多蓝牙模块场景：每个蓝牙模块对应一个串口设备，把所有串口写到 `serial_devices`（逗号分隔）即可并行接入。
+
+---
+
+## 4. 无硬件联调（推荐）
+
+### 4.1 创建虚拟设备节点
+```bash
+cd <project-root>
+./scripts/create_virtual_nodes.sh 3 /tmp/gateway-vdev
+```
+
+按设备类型创建（轮询分配）：
+```bash
+./scripts/create_virtual_nodes.sh 6 /tmp/gateway-vdev /tmp/gateway-vnodes-map.tsv --types ble_mesh,lora
+```
+
+脚本会输出 `gw` 端口列表，把它写进 `gateway.ini` 的 `[device].serial_devices`。
+并生成映射文件（列：`index type_name type_code gw_port sim_port socat_pid`），便于你按类型统计。
+
+### 4.2 模拟下位机发消息
+```bash
+python3 <project-root>/scripts/simulate_lower_device.py \
+  --port /tmp/gateway-vdev/sim0 \
+  --device-id 0001 \
+  --payload 01020304 \
+  --count 10 \
+  --interval 1
+```
+
+可选：模拟 AT 指令 ACK
+```bash
+python3 <project-root>/scripts/simulate_lower_device.py \
+  --port /tmp/gateway-vdev/sim0 \
+  --ack-at --count 0
+```
+
+### 4.3 监控串口数据
+```bash
+./scripts/monitor_virtual_port.sh /tmp/gateway-vdev/gw0
+```
+
+### 4.4 DDS 下行命令发布（按设备类型）
+先编译测试发布者：
+```bash
+cd <project-root>
+make -C test
+```
+
+按单一设备类型发送（支持别名：`ble_mesh|lora|none`）：
+```bash
+<project-root>/test/publisher --device-type ble_mesh --count 100 --interval-ms 200
+```
+
+按多类型循环发送：
+```bash
+<project-root>/test/publisher --type-seq ble_mesh,lora --count 100 --interval-ms 200
+```
+
+> 注意：网关当前下行路由按 `connection_type` 匹配设备，不按消息 `id` 匹配。
+
+---
+
+## 5. 数据库查看（SQLite）
+
+数据库路径在 `gateway.ini` 的 `[persistence].db_path`。
+
+```bash
+sqlite3 <db_path_from_gateway_ini>
+```
+
+常用命令：
+```sql
+.tables
+.schema
+SELECT COUNT(*) FROM messages;
+SELECT id, topic, status, retry_count, created_at FROM messages ORDER BY id DESC LIMIT 20;
+```
+
+也可以使用项目内置 Python 脚本（使用 Python 内置 sqlite3）：
+```bash
+cd <project-root>
+python3 scripts/read_gateway_db.py
+# 或指定数据库路径
+python3 scripts/read_gateway_db.py --db <db_path_from_gateway_ini> --limit 50
+```
+
+---
+
+## 6. 常见问题
+
+### Q1: `transport.type=dds` 启动失败
+通常是 Cyclone DDS 库路径配置不正确（检查 `DDS_HOME`、`LD_LIBRARY_PATH` 或系统库路径）。
+
+### Q2: 启动日志太多
+当前已进一步精简高频日志：
+- 不再打印缓冲区读写剩余长度跟踪日志
+- 仅在缓冲区创建失败时打印“第几个创建失败”
+- 高频发布/持久化日志下调到 TRACE，默认 INFO 级别下不会刷屏
+
+---
+
+## 7. 项目目录（核心）
+
+```text
 gateway/
-├── src/             # 应用程序核心代码
-│   ├── app_bluetooth.c/h    # 蓝牙设备相关
-│   ├── app_buffer.c/h       # 缓冲区管理
-│   ├── app_device.c/h       # 设备抽象层
-│   ├── app_message.c/h      # 消息处理
-│   ├── app_mqtt.c/h         # MQTT通信
-│   ├── app_router.c/h       # 消息路由
-│   ├── app_runner.c/h       # 应用运行管理
-│   ├── app_serial.c/h       # 串口设备
-│   ├── app_task.c/h         # 任务管理
-├── daemon/          # 守护进程相关代码
-├── init/            # 初始化脚本
-├── ota/             # OTA升级相关代码
-├── test/            # 测试代码
-├── thirdparty/      # 第三方库
-│   ├── cJSON/       # JSON解析库
-│   ├── log.c/       # 日志库
-├── Makefile         # 编译配置
-├── README.md        # 项目说明
-├── main.c           # 程序入口
+├── src/
+│   ├── app_runner.c
+│   ├── app_router.c
+│   ├── app_device.c
+│   ├── app_serial.c
+│   ├── app_bluetooth.c
+│   ├── dds/
+│   └── mqtt/
+├── include/
+├── config/
+│   ├── transport.ini
+│   ├── transport_physical.ini
+│   └── protocols.ini
+├── test/
+├── gateway.ini
+├── scripts/
+│   ├── create_virtual_nodes.sh
+│   ├── simulate_lower_device.py
+│   ├── monitor_virtual_port.sh
+│   └── read_gateway_db.py
 ```

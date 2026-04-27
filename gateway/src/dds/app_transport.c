@@ -1,13 +1,11 @@
 /**
  * @file app_transport.c
- * @brief 通信抽象层实现 - 统一MQTT与DDS接口
- * 
+ * @brief 网络协议层实现，统一 MQTT / DDS 接口
+ *
  * 功能说明：
- * - 统一封装MQTT和DDS通信接口
- * - 支持运行时协议切换
- * - 从配置文件加载通信参数
- * - 自动管理连接状态和重连
- * - 提供统一的发布/订阅接口
+ * - 统一封装 MQTT 和 DDS 通信接口
+ * - 提供连接、发布、订阅、主题与回调管理
+ * - 配置读取与运行时协议操作分离
  */
 
 #include "app_transport.h"
@@ -20,10 +18,40 @@
 #include <string.h>
 #include <strings.h>
 
-/* 传输类型字符串数组 */
+/* 传输类型字符串数组。 */
 static const char *type_strings[] = {
     "mqtt", "dds", "auto"
 };
+
+static void transport_fill_default_config(TransportConfig *config)
+{
+    if (!config) return;
+    memset(config, 0, sizeof(*config));
+    config->type = TRANSPORT_TYPE_MQTT;
+    snprintf(config->mqtt_broker, sizeof(config->mqtt_broker), "%s", "tcp://localhost:1883");
+    snprintf(config->mqtt_client_id, sizeof(config->mqtt_client_id), "%s", "gateway");
+    config->mqtt_keepalive = 60;
+    config->dds_domain_id = 0;
+    snprintf(config->dds_participant_name, sizeof(config->dds_participant_name), "%s", "gateway");
+    snprintf(config->publish_topic, sizeof(config->publish_topic), "%s", "gateway/data");
+    snprintf(config->subscribe_topic, sizeof(config->subscribe_topic), "%s", "gateway/command");
+    snprintf(config->dds_publish_topic, sizeof(config->dds_publish_topic), "%s", "GatewayData");
+    snprintf(config->dds_publish_type, sizeof(config->dds_publish_type), "%s", "GatewayDataType");
+    snprintf(config->dds_subscribe_topic, sizeof(config->dds_subscribe_topic), "%s", "GatewayCommand");
+    snprintf(config->dds_subscribe_type, sizeof(config->dds_subscribe_type), "%s", "GatewayCommandType");
+    config->default_qos = 1;
+}
+
+static int transport_is_valid_type_string(const char *str)
+{
+    if (!str) return 0;
+    for (int i = 0; i <= TRANSPORT_TYPE_AUTO; i++) {
+        if (strcasecmp(str, type_strings[i]) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
 
 /**
  * @brief 传输类型枚举转字符串
@@ -49,13 +77,118 @@ TransportType transport_string_to_type(const char *str)
 {
     if (!str) return TRANSPORT_TYPE_MQTT;
     
-    // 遍历匹配类型字符串
+    /* 遍历匹配类型字符串。 */
     for (int i = 0; i <= TRANSPORT_TYPE_AUTO; i++) {
         if (strcasecmp(str, type_strings[i]) == 0) {
             return (TransportType)i;
         }
     }
     return TRANSPORT_TYPE_MQTT;
+}
+
+int transport_load_config(TransportConfig *config, const char *config_file)
+{
+    if (!config) return -1;
+
+    transport_fill_default_config(config);
+
+    const char *cfg_file = config_file ? config_file : APP_TRANSPORT_CONFIG_FILE;
+    ConfigManager cfg = {0};
+    if (config_init(&cfg, cfg_file) != 0) {
+        log_error("Failed to init config file: %s", cfg_file);
+        return -1;
+    }
+
+    if (config_load(&cfg) != 0) {
+        log_error("Failed to load config file: %s", cfg_file);
+        config_destroy(&cfg);
+        return -1;
+    }
+
+    char type_str[32] = {0};
+    if (config_get_string(&cfg, "transport", "type", NULL, type_str, sizeof(type_str)) != 0 ||
+        type_str[0] == '\0') {
+        log_error("Missing required config: [transport].type");
+        config_destroy(&cfg);
+        return -1;
+    }
+    if (!transport_is_valid_type_string(type_str)) {
+        log_error("Invalid required config: [transport].type=%s (expected: mqtt|dds|auto)", type_str);
+        config_destroy(&cfg);
+        return -1;
+    }
+    config->type = transport_string_to_type(type_str);
+
+    int mqtt_ready = 0;
+    if (config_get_string(&cfg, "mqtt", "server", "",
+                          config->mqtt_broker, sizeof(config->mqtt_broker)) == 0 &&
+        config->mqtt_broker[0] != '\0' &&
+        config_get_string(&cfg, "mqtt", "client_id", "",
+                          config->mqtt_client_id, sizeof(config->mqtt_client_id)) == 0 &&
+        config->mqtt_client_id[0] != '\0' &&
+        config_get_string(&cfg, "mqtt", "publish_topic", "",
+                          config->publish_topic, sizeof(config->publish_topic)) == 0 &&
+        config->publish_topic[0] != '\0' &&
+        config_get_string(&cfg, "mqtt", "subscribe_topic", "",
+                          config->subscribe_topic, sizeof(config->subscribe_topic)) == 0 &&
+        config->subscribe_topic[0] != '\0') {
+        config->mqtt_keepalive = config_get_int(&cfg, "mqtt", "keepalive", config->mqtt_keepalive);
+        mqtt_ready = config->mqtt_keepalive > 0;
+    }
+
+    int dds_ready = 0;
+    config->dds_domain_id = config_get_int(&cfg, "dds", "domain_id", config->dds_domain_id);
+    if (config->dds_domain_id >= 0 &&
+        config_get_string(&cfg, "dds", "participant_name", "",
+                          config->dds_participant_name, sizeof(config->dds_participant_name)) == 0 &&
+        config->dds_participant_name[0] != '\0' &&
+        config_get_string(&cfg, "dds", "publish_topic", "",
+                          config->dds_publish_topic, sizeof(config->dds_publish_topic)) == 0 &&
+        config->dds_publish_topic[0] != '\0' &&
+        config_get_string(&cfg, "dds", "publish_type", "",
+                          config->dds_publish_type, sizeof(config->dds_publish_type)) == 0 &&
+        config->dds_publish_type[0] != '\0' &&
+        config_get_string(&cfg, "dds", "subscribe_topic", "",
+                          config->dds_subscribe_topic, sizeof(config->dds_subscribe_topic)) == 0 &&
+        config->dds_subscribe_topic[0] != '\0' &&
+        config_get_string(&cfg, "dds", "subscribe_type", "",
+                          config->dds_subscribe_type, sizeof(config->dds_subscribe_type)) == 0 &&
+        config->dds_subscribe_type[0] != '\0') {
+        dds_ready = 1;
+    }
+
+    if (config->type == TRANSPORT_TYPE_MQTT && !mqtt_ready) {
+        log_error("Missing required MQTT config for [transport].type=mqtt");
+        config_destroy(&cfg);
+        return -1;
+    }
+    if (config->type == TRANSPORT_TYPE_DDS && !dds_ready) {
+        log_error("Missing required DDS config for [transport].type=dds");
+        config_destroy(&cfg);
+        return -1;
+    }
+    if (config->type == TRANSPORT_TYPE_AUTO) {
+        if (!mqtt_ready && !dds_ready) {
+            log_error("Missing required config: [transport].type=auto requires valid MQTT or DDS config");
+            config_destroy(&cfg);
+            return -1;
+        }
+        if (mqtt_ready) {
+            config->type = TRANSPORT_TYPE_MQTT;
+        } else if (dds_ready) {
+            config->type = TRANSPORT_TYPE_DDS;
+        }
+    }
+
+    config->default_qos = config_get_int(&cfg, "transport", "default_qos", config->default_qos);
+    if (config->default_qos < 0) {
+        log_error("Invalid required config: [transport].default_qos=%d", config->default_qos);
+        config_destroy(&cfg);
+        return -1;
+    }
+
+    config_destroy(&cfg);
+    return 0;
 }
 
 /**
@@ -146,23 +279,7 @@ int transport_init(TransportManager *manager, const TransportConfig *config)
     if (config) {
         memcpy(&manager->config, config, sizeof(TransportConfig));
     } else {
-        // 使用默认配置
-        manager->config.type = TRANSPORT_TYPE_MQTT;
-        strcpy(manager->config.mqtt_broker, "tcp://localhost:1883");
-        strcpy(manager->config.mqtt_client_id, "gateway");
-        manager->config.mqtt_keepalive = 60;
-        manager->config.dds_domain_id = 0;
-        manager->config.default_qos = 1;
-        
-        // 默认话题配置 - MQTT
-        strcpy(manager->config.publish_topic, "gateway/data");
-        strcpy(manager->config.subscribe_topic, "gateway/command");
-        
-        // 默认话题配置 - DDS
-        strcpy(manager->config.dds_publish_topic, "GatewayData");
-        strcpy(manager->config.dds_publish_type, "GatewayDataType");
-        strcpy(manager->config.dds_subscribe_topic, "GatewayCommand");
-        strcpy(manager->config.dds_subscribe_type, "GatewayCommandType");
+        transport_fill_default_config(&manager->config);
     }
     
     manager->state = TRANSPORT_STATE_DISCONNECTED;
@@ -196,6 +313,10 @@ int transport_init(TransportManager *manager, const TransportConfig *config)
     
     // 初始化DDS客户端
     if (manager->config.type == TRANSPORT_TYPE_DDS) {
+        if (!dds_is_compiled_enabled()) {
+            log_error("DDS transport requested but DDS support is unavailable in current binary");
+            return -1;
+        }
         DdsManager *dds = malloc(sizeof(DdsManager));
         if (dds) {
             DdsConfig dds_cfg = {0};
@@ -250,58 +371,10 @@ int transport_init(TransportManager *manager, const TransportConfig *config)
  */
 int transport_init_from_config(TransportManager *manager, const char *config_file)
 {
-    if (!manager) return -1;
-    
-    ConfigManager config;
-    if (config_init(&config, config_file) != 0) {
-        log_warn("Failed to load config file, using defaults");
-        return transport_init(manager, NULL);
+    TransportConfig tconfig;
+    if (transport_load_config(&tconfig, config_file) != 0) {
+        return -1;
     }
-    
-    config_load(&config);
-    
-    TransportConfig tconfig = {0};
-    
-    // 读取传输类型
-    char type_str[32] = "mqtt";
-    config_get_string(&config, "transport", "type", "mqtt", type_str, sizeof(type_str));
-    tconfig.type = transport_string_to_type(type_str);
-    
-    // MQTT配置
-    config_get_string(&config, "mqtt", "server", "tcp://localhost:1883",
-                     tconfig.mqtt_broker, sizeof(tconfig.mqtt_broker));
-    config_get_string(&config, "mqtt", "client_id", "gateway",
-                     tconfig.mqtt_client_id, sizeof(tconfig.mqtt_client_id));
-    tconfig.mqtt_keepalive = config_get_int(&config, "mqtt", "keepalive", 60);
-    
-    // DDS配置
-    tconfig.dds_domain_id = config_get_int(&config, "dds", "domain_id", 0);
-    config_get_string(&config, "dds", "participant_name", "gateway",
-                     tconfig.dds_participant_name, sizeof(tconfig.dds_participant_name));
-    
-    // ========== 话题配置 ==========
-    
-    // MQTT话题
-    config_get_string(&config, "mqtt", "publish_topic", "gateway/data",
-                     tconfig.publish_topic, sizeof(tconfig.publish_topic));
-    config_get_string(&config, "mqtt", "subscribe_topic", "gateway/command",
-                     tconfig.subscribe_topic, sizeof(tconfig.subscribe_topic));
-    
-    // DDS话题
-    config_get_string(&config, "dds", "publish_topic", "GatewayData",
-                     tconfig.dds_publish_topic, sizeof(tconfig.dds_publish_topic));
-    config_get_string(&config, "dds", "publish_type", "GatewayDataType",
-                     tconfig.dds_publish_type, sizeof(tconfig.dds_publish_type));
-    config_get_string(&config, "dds", "subscribe_topic", "GatewayCommand",
-                     tconfig.dds_subscribe_topic, sizeof(tconfig.dds_subscribe_topic));
-    config_get_string(&config, "dds", "subscribe_type", "GatewayCommandType",
-                     tconfig.dds_subscribe_type, sizeof(tconfig.dds_subscribe_type));
-    
-    // QoS配置
-    tconfig.default_qos = config_get_int(&config, "transport", "default_qos", 1);
-    
-    config_destroy(&config);
-    
     return transport_init(manager, &tconfig);
 }
 
@@ -589,7 +662,7 @@ int transport_subscribe_default(TransportManager *manager)
                                   topic, manager->config.default_qos);
         }
     } else if (manager->active_type == TRANSPORT_TYPE_DDS && manager->dds_manager) {
-        // DDS订阅默认话题
+        // DDS订阅默认主题
         return dds_subscribe_default((DdsManager *)manager->dds_manager);
     }
     
@@ -619,7 +692,7 @@ int transport_publish_default(TransportManager *manager,
         return mqtt_publish((MqttClient *)manager->mqtt_client, topic, 
                            data, len, manager->config.default_qos);
     } else if (manager->active_type == TRANSPORT_TYPE_DDS && manager->dds_manager) {
-        // DDS发布到默认话题
+        // DDS发布到默认主题
         return dds_publish_default((DdsManager *)manager->dds_manager, data, len);
     }
     

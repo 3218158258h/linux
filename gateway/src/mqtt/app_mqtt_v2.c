@@ -1,9 +1,9 @@
 /**
  * @file app_mqtt_v2.c
- * @brief MQTT客户端改进版实现 - 基于Paho MQTT库
- * 
+ * @brief MQTT 客户端实现，基于 Paho MQTT 库
+ *
  * 功能说明：
- * - MQTT连接管理与自动重连
+ * - MQTT 连接管理与自动重连
  * - 消息发布与订阅
  * - 指数退避重连策略
  * - 状态回调与事件通知
@@ -20,34 +20,40 @@
 #include <time.h>
 #include <errno.h>
 
-/* 使用paho-mqtt库 */
+/* 使用 Paho MQTT 库。 */
 #include <MQTTClient.h>
 
-/**
- * @brief MQTT内部结构体
- * 
- * 存储MQTT客户端的内部状态和资源。
- */
+/* MQTT 内部结构体，保存客户端状态和资源。 */
 typedef struct {
-    MQTTClient mqtt_client;         // Paho MQTT客户端句柄
-    pthread_t thread;               // 后台线程
-    int running;                    // 运行标志
-    pthread_mutex_t lock;           // 状态锁
-    
-    /* 重连状态 */
-    int reconnect_delay;            // 当前重连延迟（秒）
-    time_t last_reconnect_time;     // 上次重连尝试时间
+    MQTTClient mqtt_client;         /* MQTT 客户端句柄。 */
+    pthread_t thread;               /* 后台线程。 */
+    int running;                    /* 运行标志。 */
+    pthread_mutex_t lock;           /* 状态锁。 */
+
+    /* 重连状态。 */
+    int reconnect_delay;            /* 当前重连延迟（秒）。 */
+    time_t last_reconnect_time;     /* 上次重连尝试时间。 */
 } MqttInternal;
 
 /**
- * @brief 连接丢失回调
- * 
- * 当MQTT连接断开时由Paho库调用。
- * 更新状态并触发相关回调。
- * 
- * @param context 用户上下文（MqttClient指针）
- * @param cause 断开原因字符串
+ * @brief 填充MQTT默认配置
  */
+static void mqtt_fill_default_config(MqttConfig *config)
+{
+    if (!config) return;
+    memset(config, 0, sizeof(MqttConfig));
+    snprintf(config->broker_url, sizeof(config->broker_url), "%s", "tcp://localhost:1883");
+    snprintf(config->client_id, sizeof(config->client_id), "%s", "gateway");
+    config->keepalive_interval = 60;
+    config->clean_session = 1;
+    config->default_qos = MQTT_QOS_1;
+    config->auto_reconnect = 1;
+    config->reconnect_min_interval = 1;
+    config->reconnect_max_interval = 60;
+    config->reconnect_max_attempts = 0;
+}
+
+/* 连接丢失回调：断线后更新状态并触发回调。 */
 static void connection_lost(void *context, char *cause)
 {
     MqttClient *client = (MqttClient *)context;
@@ -57,39 +63,31 @@ static void connection_lost(void *context, char *cause)
     
     pthread_mutex_lock(&internal->lock);
     
-    // 更新状态为断开
+    /* 更新状态为断开。 */
     client->state = MQTT_STATE_DISCONNECTED;
-    // 重置重连延迟为最小值
+    /* 重置重连延迟为最小值。 */
     internal->reconnect_delay = client->config.reconnect_min_interval;
     
     pthread_mutex_unlock(&internal->lock);
     
     log_warn("MQTT connection lost: %s", cause ? cause : "unknown");
     
-    // 触发断开回调
+    /* 触发断开回调。 */
     if (client->on_disconnected) {
         client->on_disconnected(client);
     }
-    // 触发状态变化回调
+    /* 触发状态变化回调。 */
     if (client->on_state_changed) {
         client->on_state_changed(client, MQTT_STATE_DISCONNECTED);
     }
 }
 
-/**
- * @brief 消息到达回调
- * 
- * 当收到订阅主题的消息时由Paho库调用。
- * 
- * @param context 用户上下文（MqttClient指针）
- * @param topicName 消息主题
- * @param topicLen 主题长度
- * @param message 消息结构体
- * @return 1表示消息已处理
- */
+/* 消息到达回调：收到订阅主题的数据后转发给上层。 */
 static int message_arrived(void *context, char *topicName, int topicLen,
                            MQTTClient_message *message)
 {
+    (void)topicLen;  /* 当前实现未使用主题长度参数。 */
+
     MqttClient *client = (MqttClient *)context;
     if (!client) {
         MQTTClient_freeMessage(&message);
@@ -99,7 +97,7 @@ static int message_arrived(void *context, char *topicName, int topicLen,
     
     log_debug("MQTT message received on topic: %s", topicName);
     
-    // 调用用户注册的消息回调
+    /* 调用用户注册的消息回调。 */
     if (client->on_message) {
         client->on_message(client, topicName, message->payload, message->payloadlen);
     }
@@ -300,15 +298,8 @@ int mqtt_init(MqttClient *client, const MqttConfig *config)
     if (config) {
         memcpy(&client->config, config, sizeof(MqttConfig));
     } else {
-        // 使用默认配置
-        strcpy(client->config.broker_url, "tcp://localhost:1883");
-        client->config.keepalive_interval = 60;
-        client->config.clean_session = 1;
-        client->config.default_qos = MQTT_QOS_0;
-        client->config.auto_reconnect = 1;
-        client->config.reconnect_min_interval = 1;    // 最小重连间隔1秒
-        client->config.reconnect_max_interval = 60;   // 最大重连间隔60秒
-        client->config.reconnect_max_attempts = 0;    // 无限重试
+        // 使用统一默认配置
+        mqtt_fill_default_config(&client->config);
     }
     
     // 分配内部结构
@@ -352,29 +343,21 @@ int mqtt_init(MqttClient *client, const MqttConfig *config)
  */
 int mqtt_init_default(MqttClient *client, const char *broker_url, const char *client_id)
 {
-    MqttConfig config = {0};
+    MqttConfig config;
+    mqtt_fill_default_config(&config);
     
     // 设置Broker地址
     if (broker_url) {
         strncpy(config.broker_url, broker_url, sizeof(config.broker_url) - 1);
-    } else {
-        strcpy(config.broker_url, "tcp://localhost:1883");
+        config.broker_url[sizeof(config.broker_url) - 1] = '\0';
     }
     
     // 设置客户端ID
     if (client_id) {
         strncpy(config.client_id, client_id, sizeof(config.client_id) - 1);
+        config.client_id[sizeof(config.client_id) - 1] = '\0';
     }
-    
-    // 默认配置
-    config.keepalive_interval = 60;
-    config.clean_session = 1;
-    config.default_qos = MQTT_QOS_1;
-    config.auto_reconnect = 1;
-    config.reconnect_min_interval = 1;
-    config.reconnect_max_interval = 60;
-    config.reconnect_max_attempts = 0;
-    
+
     return mqtt_init(client, &config);
 }
 
@@ -580,7 +563,7 @@ int mqtt_publish(MqttClient *client, const char *topic,
     int rc = MQTTClient_publishMessage(internal->mqtt_client, topic, &pubmsg, &token);
     
     if (rc == MQTTCLIENT_SUCCESS) {
-        // QoS > 0时等待交付完成
+        // 服务质量等级大于0时等待交付完成
         if (qos > MQTT_QOS_0) {
             MQTTClient_waitForCompletion(internal->mqtt_client, token, 5000);
         }

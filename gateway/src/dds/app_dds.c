@@ -16,12 +16,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <dlfcn.h>
 
-/* 条件编译：是否启用Cyclone DDS */
+/* 编译期默认启用 Cyclone DDS；未定义时保留桩实现用于兼容测试环境。 */
 #ifdef USE_CYCLONE_DDS
 #include <dds/dds.h>
 #define DDS_ENABLED 1
-#include "GatewayData.h"  // IDL生成的数据类型
+#include "GatewayData.h"  // 接口描述语言生成的数据类型
 #define MAX_DATA_LEN 4096
 #else
 #define DDS_ENABLED 0
@@ -35,7 +36,7 @@
 typedef struct DdsTopicInfo {
     char name[128];           // 话题名称
     char type_name[64];       // 数据类型名称
-    DdsQosPolicy qos;         // QoS策略
+    DdsQosPolicy qos;         // 服务质量策略
 #ifdef USE_CYCLONE_DDS
     dds_entity_t topic;       // 话题实体
     dds_entity_t writer;      // 写入器实体
@@ -98,6 +99,15 @@ DdsQosPolicy dds_qos_reliable(void)
         .lifespan_ms = 60000   // 生命周期60秒
     };
     return qos;
+}
+
+int dds_is_compiled_enabled(void)
+{
+#if DDS_ENABLED
+    return 1;
+#else
+    return 0;
+#endif
 }
 
 /**
@@ -175,7 +185,7 @@ int dds_init(DdsManager *manager, const DdsConfig *config)
         memcpy(&manager->config, config, sizeof(DdsConfig));
     } else {
         manager->config.domain_id = 0;
-        strcpy(manager->config.participant_name, "gateway");
+        snprintf(manager->config.participant_name, sizeof(manager->config.participant_name), "%s", "gateway");
         manager->config.default_qos = dds_qos_default();
         manager->config.auto_discovery = 1;
     }
@@ -231,7 +241,7 @@ int dds_init_default(DdsManager *manager, int domain_id)
         .domain_id = domain_id,
         .auto_discovery = 1
     };
-    strcpy(config.participant_name, "gateway");
+    snprintf(config.participant_name, sizeof(config.participant_name), "%s", "gateway");
     config.default_qos = dds_qos_default();
     
     return dds_init(manager, &config);
@@ -455,11 +465,11 @@ int dds_publish(DdsManager *manager, const char *topic_name,
         return -1;
     }
     
-    log_debug("DDS published to %s: %zu bytes", topic_name, len);
+    log_trace("DDS published to %s: %zu bytes", topic_name, len);
     return 0;
 #else
     // DDS未启用时的桩函数
-    log_debug("DDS publish (stub): topic=%s, len=%zu", topic_name, len);
+    log_trace("DDS publish (stub): topic=%s, len=%zu", topic_name, len);
     return 0;
 #endif
 }
@@ -504,13 +514,79 @@ static void on_dds_data_available(dds_entity_t reader, void *arg)
     if (n > 0 && infos[0].valid_data) {
         const char *topic_name = find_topic_name_by_reader(manager, reader);
         
-        log_debug("DDS received from %s: %u bytes", topic_name, msg.length);
+        log_info("DDS received from %s: %u bytes", topic_name, msg.length);
         
         // 调用用户注册的回调函数
         if (manager->on_data_available) {
             manager->on_data_available(manager, topic_name, msg.data, msg.length);
         }
     }
+}
+
+typedef dds_listener_t *(*dds_create_listener_fn_t)(void *);
+typedef dds_return_t (*dds_lset_data_available_fn_t)(dds_listener_t *, dds_on_data_available_fn);
+typedef dds_entity_t (*dds_create_reader_fn_t)(dds_entity_t, dds_entity_t, const dds_qos_t *, const dds_listener_t *);
+typedef void (*dds_delete_listener_fn_t)(dds_listener_t *);
+typedef const char *(*dds_strretcode_fn_t)(dds_return_t);
+
+static void *dds_resolve_symbol(const char *name)
+{
+    if (!name || name[0] == '\0') {
+        return NULL;
+    }
+    return dlsym(RTLD_DEFAULT, name);
+}
+
+static int dds_create_reader_compat(DdsManager *manager,
+                                    dds_entity_t subscriber,
+                                    dds_entity_t topic,
+                                    dds_entity_t *out_reader)
+{
+    if (!manager || !out_reader) {
+        return -1;
+    }
+
+    dds_create_reader_fn_t p_create_reader =
+        (dds_create_reader_fn_t)dds_resolve_symbol("dds_create_reader");
+    if (!p_create_reader) {
+        log_error("DDS symbol missing: dds_create_reader");
+        return -1;
+    }
+
+    dds_create_listener_fn_t p_create_listener =
+        (dds_create_listener_fn_t)dds_resolve_symbol("dds_create_listener");
+    dds_lset_data_available_fn_t p_lset_data_available =
+        (dds_lset_data_available_fn_t)dds_resolve_symbol("dds_lset_data_available");
+    dds_delete_listener_fn_t p_delete_listener =
+        (dds_delete_listener_fn_t)dds_resolve_symbol("dds_delete_listener");
+    dds_strretcode_fn_t p_strretcode =
+        (dds_strretcode_fn_t)dds_resolve_symbol("dds_strretcode");
+
+    dds_listener_t *listener = NULL;
+    if (p_create_listener && p_lset_data_available) {
+        listener = p_create_listener(manager);
+        if (listener) {
+            p_lset_data_available(listener, on_dds_data_available);
+        }
+    } else {
+        log_warn("DDS listener symbols missing, fallback to reader without listener callback");
+    }
+
+    dds_entity_t reader = p_create_reader(subscriber, topic, NULL, listener);
+    if (reader < 0) {
+        if (listener && p_delete_listener) {
+            p_delete_listener(listener);
+        }
+        if (p_strretcode) {
+            log_error("Failed to create reader: %s", p_strretcode((dds_return_t)reader));
+        } else {
+            log_error("Failed to create reader, ret=%d", (int)reader);
+        }
+        return -1;
+    }
+
+    *out_reader = reader;
+    return 0;
 }
 #endif
 
@@ -538,21 +614,10 @@ int dds_subscribe(DdsManager *manager, const char *topic_name)
     
     // 延迟创建读取器
     if (!info->reader) {
-        // 创建监听器并设置数据到达回调
-        dds_listener_t *listener = dds_create_listener(manager);
-        dds_lset_data_available(listener, on_dds_data_available);
-        
-        // 创建读取器，绑定监听器
-        info->reader = dds_create_reader(internal->subscriber, info->topic, NULL, listener);
-        
-        if (info->reader < 0) {
-            dds_delete_listener(listener);
-            log_error("Failed to create reader: %s", dds_strretcode(info->reader));
+        if (dds_create_reader_compat(manager, internal->subscriber, info->topic, &info->reader) != 0) {
             return -1;
         }
-        
-        // 监听器被读取器接管，不需要手动删除
-        log_debug("DDS reader created with listener for: %s", topic_name);
+        log_debug("DDS reader created for: %s", topic_name);
     }
 #endif
     
