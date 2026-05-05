@@ -3172,6 +3172,36 @@ int main() {
 
 > ⚠️ 循环引用示例（两个 `shared_ptr` 互相持有对方）会导致内存泄漏，此时应将其中一个改为 `weak_ptr`。
 ---
+## STL容器
+C++ STL（标准模板库）中的容器可以分为三大类：
+
+1. **顺序容器（Sequence Containers）**：
+   * 这些容器按元素的插入顺序进行存储。
+   * 常见的顺序容器有：
+     * `vector`：动态数组，支持快速随机访问。
+     * `deque`：双端队列，支持从两端高效插入和删除。
+     * `list`：双向链表，支持在两端和中间高效插入和删除。
+     * `array`：固定大小的数组。
+     * `forward_list`：单向链表，比`list`更节省内存。
+
+2. **无序容器（Unordered Containers）**：
+   * 这些容器使用哈希表实现，元素的存储不按任何顺序排列。
+   * 常见的无序容器有：
+     * `unordered_map`：哈希表实现的映射容器。
+     * `unordered_set`：哈希表实现的集合容器。
+     * `unordered_multimap`：哈希表实现的允许重复键值的映射容器。
+     * `unordered_multiset`：哈希表实现的允许重复元素的集合容器。
+
+3. **关联容器（Associative Containers）**：
+   * 这些容器通过平衡二叉树（如红黑树）实现，按照一定的顺序（通常是升序或降序）存储元素。
+   * 常见的关联容器有：
+     * `map`：基于键值对的有序映射容器。
+     * `set`：有序集合容器。
+     * `multimap`：允许重复键值的有序映射容器。
+     * `multiset`：允许重复元素的有序集合容器。
+
+
+
 ## 哈希结构
 - 数组
 - set集合
@@ -3520,3 +3550,113 @@ C++标准库的`std::queue`容器,底层默认是`deque`，也可`queue<int, lis
   - `q.empty()`：判断队列是否为空，为空返回true，不为空返回false；
   - `q.size()`：获取队列中元素个数。
   - `q.pop()`：不返回被移除的元素！若要获取并移除，需先调用 front() 再 pop()。
+
+你的理解大部分是对的，但有些细节可以改进。下面是一些关键点的修正和补充：
+
+### allocator 分配器
+
+**核心操作**
+
+* **内存分配：** `allocate()` 分配原始内存。
+* **内存释放：** `deallocate()` 释放已分配的内存。
+* **对象构造：** `construct()` 在已分配的内存上构造对象。
+* **对象析构：** `destroy()` 析构对象但不释放内存。
+
+**设计理念**
+
+* **分离关注点：** 容器关注数据结构，`allocator` 关注内存管理。
+* **策略模式：** 通过模板参数注入不同的内存管理策略。
+* **类型安全：** 通过 `rebind` 机制支持容器内部数据结构的分配。
+
+**Q1: "什么情况下应该使用自定义 `allocator`？"**
+
+* **A1:** 需要内存池优化性能时，使用特殊内存区域（共享内存、GPU 内存）；需要内存使用监控和调试时；实现特定内存布局需求时。
+
+**Q2: "自定义 `allocator` 需要注意哪些陷阱？"**
+
+* **A2:** 保证异常安全，正确处理对齐要求，正确实现 `propagate_on_container_*` 特性，必要时保证线程安全。
+
+---
+
+#### **rebind 机制**
+
+**正确描述：**
+
+* **`rebind` 机制** 允许一个为类型 `T` 设计的分配器，能够**切换**成给另一个类型 `U` 分配内存。这个机制是 STL 容器能够正常工作的底层基础，尤其是对于那些需要内部分配不同数据结构的容器。
+
+例如，原本 `allocator<int>` 只支持 `int` 类型的内存分配，但是 `list<int>` 内部并不是直接存储 `int` 类型的对象，而是需要存储一个特定的结构类型——链表节点。此时就需要通过 `rebind<U>` 得到针对节点类型 `U` 的内存分配器。链表节点 `ListNode<int>` 就是 `U` 类型，而 `U` 类型的内存就通过 `rebind` 来分配。
+
+```cpp
+// list 使用的是链表节点，而不是直接存储 int
+struct ListNode {
+    ListNode* prev;
+    ListNode* next;
+    int value;
+};
+std::allocator<ListNode<int>> alloc;
+```
+
+#### **STL容器调用 allocator**
+
+**分配对象内存：**
+
+* **`allocate`** 方法用于分配原始内存块。
+* **`construct`** 方法在内存块上构造对象。
+* **`destroy`** 方法析构对象但不释放内存。
+* **`deallocate`** 方法释放内存块。
+
+**分配内部数据结构内存：**
+
+* **`rebind`** 机制用于分配特定数据结构（如链表节点）的内存。
+* STL 容器会根据不同的类型分配和管理对象内存和数据结构内存。例如，`vector` 直接分配对象数组，而 `list` 需要通过 `rebind` 分配节点内存。
+
+```cpp
+#include <memory>
+#include <list>
+#include <iostream>
+
+void basic_allocator_usage() {
+    // 默认allocator使用
+    std::allocator<int> alloc;
+    // 分配能容纳5个int的内存
+    int* ptr = alloc.allocate(5);
+    // 在分配的内存上构造对象
+    for (int i = 0; i < 5; ++i) {
+        alloc.construct(ptr + i, i * 10); // 构造对象：0, 10, 20, 30, 40
+    }
+    // 使用对象
+    for (int i = 0; i < 5; ++i) {
+        std::cout << ptr[i] << " "; // 输出：0 10 20 30 40
+    }
+    std::cout << std::endl;
+    // 析构对象（但不释放内存）
+    for (int i = 0; i < 5; ++i) {
+        alloc.destroy(ptr + i);
+    }
+    // 释放内存
+    alloc.deallocate(ptr, 5);
+}
+
+void basic_list_allocator_usage() {
+    // 分配 list 节点内存
+    std::allocator<ListNode<int>> alloc;
+    ListNode<int>* node = alloc.allocate(1);
+    alloc.construct(node, ListNode<int>{nullptr, nullptr, 42});
+    std::cout << "Node value: " << node->value << std::endl;
+    alloc.destroy(node);
+    alloc.deallocate(node, 1);
+}
+
+int main() {
+    basic_allocator_usage();
+    basic_list_allocator_usage();
+    return 0;
+}
+```
+
+1. **`allocator`** 的功能非常强大，能让我们精细控制内存的分配与释放。
+2. **`rebind` 机制** 是支持复杂数据结构（例如链表节点、红黑树节点等）内存管理的关键，它确保了 STL 容器在内部分配数据结构时能使用正确的内存分配策略。
+3. 自定义 `allocator` 的关键在于异常安全、对齐要求、`propagate_on_container_*` 特性的实现等，都是容器实现时需要考虑的细节。
+
+
+
